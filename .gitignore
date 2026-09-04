@@ -1,0 +1,26 @@
+# Foundry
+cache/
+out/
+
+# Ignores development broadcast logs
+!/broadcast
+/broadcast/*/31337/
+/broadcast/**/dry-run/
+
+# Environment
+.env
+
+# Coverage reports (HTML report too large to commit; .gas-snapshot IS committed)
+coverage/
+lcov.info
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
