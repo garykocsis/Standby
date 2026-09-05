@@ -1,6 +1,7 @@
-# Standby — Implementation Plan
+## Standby — Implementation Plan
 
 **Status:** FINAL PASS / FROZEN
+**Amendments:** 2026-09-05 — §10.11 G5-C clarified to require heterogeneous currency-decimal generalization and prohibit production dependence on the canonical 6-decimal fixture. This is a verification-strengthening clarification and does not alter frozen protocol semantics.
 **Project:** Standby  
 **Tagline:** _Execution capacity when you need it._  
 **Technical descriptor:** Protocol-enforced future execution capacity from shared AMM liquidity.
@@ -858,7 +859,14 @@ Prove canonical fixture plus at least one generalized configuration:
 
 - oneForZero protected direction,
 - different token identities/order,
-- different valid ticks/liquidity.
+- different valid ticks/liquidity,
+- heterogeneous currency decimals, including an asymmetric-decimal configuration.
+
+Production Standby logic MUST NOT assume that either currency uses six decimals, that both currencies use the same number of decimals, or that the canonical 6-decimal fixture scale applies outside that fixture.
+
+Supporting Capacity and the corresponding Capacity Obligation MUST be represented in raw units of the protected output currency so that they remain dimensionally comparable without protocol-wide decimal normalization.
+
+Generalization evidence MUST verify that authoritative derivation remains equivalent to the independent reference derivation across the exercised currency-decimal configuration.
 
 ## 10.12 G5 statement
 
