@@ -736,6 +736,34 @@ During implementation, focused test commands may be used first, but a clean buil
 
 ---
 
+## Continuous Integration
+
+GitHub Actions provides the repository-level continuous integration boundary for changes targeting `main`.
+
+The workflow is defined at:
+
+`.github/workflows/ci.yml`
+
+CI runs on:
+
+- pull requests targeting `main`;
+- pushes to `main`.
+
+The CI environment uses the validated Foundry baseline:
+
+- Foundry `v1.3.5`;
+- Solidity `0.8.26`;
+- recursive Git submodule checkout.
+
+Each CI run performs:
+
+````bash
+forge fmt --check
+forge build --sizes
+forge test -vvv
+
+---
+
 # Remappings
 
 Standby currently relies on Foundry's dependency-generated remappings.
@@ -744,7 +772,7 @@ The validated Uniswap v4 core resolution is:
 
 ```text
 @uniswap/v4-core/ -> lib/v4-hooks-public/lib/v4-core/
-```
+````
 
 Do not add redundant remappings unless the existing dependency resolution no longer works or a new dependency requires one.
 
