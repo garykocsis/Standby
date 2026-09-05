@@ -3,8 +3,9 @@
 **Canonical Document #8 of 8**  
 **Document:** `testing-strategy.md`  
 **Canonical Layer:** Proof  
-**Status:** **FINAL PASS / FROZEN**  
-**Upstream:** `context.md` → `economic-agreement.md` → `mechanism.md` → `spec.md` → `architecture.md` → `state-machine.md` → `invariants.md`  
+**Status:** **FINAL PASS / FROZEN**
+**Amendments:** 2026-09-05 — §10 Verification Domain Completeness clarified to require currency-denominational domain coverage where authoritative economic derivations are currency-denominated, including exclusion of dependence on the canonical 6-decimal fixture. Corresponding §11.3 traceability was updated. This is a verification-strengthening clarification and does not alter frozen protocol semantics.
+**Upstream:** `context.md` → `economic-agreement.md` → `mechanism.md` → `spec.md` → `architecture.md` → `state-machine.md` → `invariants.md`
 **Downstream:** Uniswap v4 Reference Realization / Implementation Handoff
 
 ---
@@ -389,61 +390,73 @@ Operation-level proofs establish local transition correctness. They do not by th
 The `IVC` namespace identifies invariant-verification-closure obligations. It does not imply a one-to-one relationship with canonical invariants.
 
 ### IVC-01 — Establishment Exclusivity Verification
+
 **Primary invariant trace:** INV-01
 
 Verification must establish across the complete establishment domain that authoritative commitment existence and relationship creation can arise only from successful canonical O1 establishment.
 
 ### IVC-02 — Admitted-Semantics Domain Verification
+
 **Primary invariant trace:** INV-02
 
 Verification must establish across every future dependency and relevant configuration mutation that admitted commitment semantics remain stable and are not retroactively reinterpreted.
 
 ### IVC-03 — External Fact Admission Exclusivity Verification
+
 **Primary invariant trace:** INV-03
 
 Where external facts can govern Standby behavior, verification must establish that only facts admitted through the applicable authoritative fact-admission boundary may acquire canonical authority.
 
 ### IVC-04 — Admitted Fact Consumption Verification
+
 **Primary invariant trace:** INV-03
 
 Verification must establish that once a fact is authoritatively admitted, all downstream behavior consumes the authoritative admitted fact or canonical reconstruction rather than an unadmitted, stale, caller-asserted, or implementation-local substitute.
 
 ### IVC-05 — Dependency-Lifetime Reconstructibility Verification
+
 **Primary invariant trace:** INV-04
 
 Verification must establish that every future-required authoritative fact, distinction, relationship, consequence, or derivational basis remains knowable for exactly its normative dependency lifetime.
 
 ### IVC-06 — Commitment Derivation Coverage Verification
+
 **Primary invariant trace:** INV-05
 
 Verification must establish the correctness of every canonical commitment-derived property across every authoritative context in which it governs behavior.
 
 ### IVC-07 — Exercise Boundary Completeness Verification
+
 **Primary invariant trace:** INV-06
 
 Verification must establish the complete Validity, Exercisability, authority, extent, and commitment-specific exercise boundary across all applicable states and sequences.
 
 ### IVC-08 — Cross-Exercise Fulfillment Non-Duplication Verification
+
 **Primary invariant trace:** INV-07
 
 Verification must establish that one execution, delivery, or fulfillment fact cannot be attributed to multiple exercises or commitments unless the upstream semantics independently authorize such attribution.
 
 ### IVC-09 — Fulfillment Conservation Across Sequences Verification
+
 **Primary invariant trace:** INV-08
 
 Verification must establish exact fulfillment conservation over repeated partial exercises, complete exercise, intervening shared-resource transitions, and later release/exhaustion consequences.
 
 ### IVC-10 — Economic Cause Domain Verification
+
 **Primary invariant trace:** INV-09
 
 Verification must establish that economically distinct causes—especially fulfillment exhaustion and non-fulfillment release—remain distinguishable wherever later normative behavior depends upon the distinction.
 
 ### IVC-11 — Backing Derivation Coverage Verification
+
 **Primary invariant trace:** INV-10
 
 Verification must establish complete correctness of backing-domain membership, aggregation, Supporting Capacity derivation, joint feasibility, and cross-domain non-substitution across the canonical derivation domain.
 
 ### IVC-12 — Backing Sufficiency Across Reachable States Verification
+
 **Primary invariant trace:** INV-11
 
 Verification must establish that every reachable authoritative state produced by permitted operations and derived consequences satisfies the applicable backing-sufficiency relationship whenever a binding Capacity Obligation exists.
@@ -451,6 +464,7 @@ Verification must establish that every reachable authoritative state produced by
 **INV-12 — Complete Backing Enforcement requires no additional IVC obligation beyond complete discharge of O3-V7 across the Section 10 economic-effect path domain.**
 
 ### IVC-13 — Atomic Composition Coverage Verification
+
 **Primary invariant trace:** INV-13
 
 Verification must establish complete-or-zero authoritative economic finality across every economically coupled operation and every economically meaningful failure position capable of exposing a forbidden partial result.
@@ -637,11 +651,19 @@ Where a canonical constraint applies by economic effect, verification must cover
 
 Verification must cover every implementation surface that computes, caches, reconstructs, classifies, approximates, or otherwise supplies an economically meaningful canonical derivation.
 
-### 10.8 Failure Domain
+### 10.8 Currency-Denominational Domain
+
+Where an authoritative economic derivation is expressed in units of a currency, verification must establish correctness across materially distinct supported currency-denominational configurations.
+
+For Supporting Capacity and the corresponding Capacity Obligation, verification must establish that both remain expressed in the same raw-unit denomination of the protected output currency and remain dimensionally comparable without dependence on the canonical fixture's decimal scale.
+
+Verification must exclude realization dependence on either currency using six decimals, both currencies using equal decimals, or the canonical fixture's `1e6` scale. Where heterogeneous currency decimals are supported by the realization, the verification domain must include asymmetric-decimal configurations sufficient to expose fixed-scale, normalization, rounding, truncation, precision, or arithmetic assumptions capable of changing an authoritative result.
+
+### 10.9 Failure Domain
 
 Verification must cover every economically distinguishable failure position capable of leaving partial authoritative consequences, corrupting authoritative information, or changing later canonical behavior.
 
-### 10.9 Sequence Semantics Preservation
+### 10.10 Sequence Semantics Preservation
 
 Domain-complete sequence verification must evaluate each authoritative operation or derived consequence against the complete authoritative facts and consequences produced by its actual preceding sequence.
 
@@ -671,100 +693,100 @@ The canonical chain is:
 
 #### O1 — Commitment Establishment
 
-| Verification obligation | Principal Specification basis | Architecture realization | Principal invariant protection |
-|---|---|---|---|
-| O1-V1 | SPEC-E1; SPEC-A1, A3 | A2, A6; A1 for result | INV-01 |
-| O1-V2 | SPEC-E1–E4; applicable SPEC-A/B | A2, A3, A4, A6 | INV-01; INV-03 where applicable |
-| O1-V3 | SPEC-E4; SPEC-B1–B6, B8, B9, B11–B12 as applicable | A3, A4 | INV-10 |
-| O1-V4 | SPEC-E4; SPEC-B9 | A2, A4 | INV-11 |
-| O1-V5 | SPEC-E3, E5 | A1, A2, A3 | INV-01, INV-05 |
-| O1-V6 | SPEC-E2, E5; SPEC-A4; applicable SPEC-C | A1, A6, A8 | INV-02 |
-| O1-V7 | SPEC-E5; SPEC-C1–C3, C6–C7 | A8 | INV-04 |
-| O1-V8 | SPEC-E5 | A7 | INV-13 |
-| O1-V9 | SPEC-E6 | A2, A7 | INV-01, INV-13 |
+| Verification obligation | Principal Specification basis                      | Architecture realization | Principal invariant protection  |
+| ----------------------- | -------------------------------------------------- | ------------------------ | ------------------------------- |
+| O1-V1                   | SPEC-E1; SPEC-A1, A3                               | A2, A6; A1 for result    | INV-01                          |
+| O1-V2                   | SPEC-E1–E4; applicable SPEC-A/B                    | A2, A3, A4, A6           | INV-01; INV-03 where applicable |
+| O1-V3                   | SPEC-E4; SPEC-B1–B6, B8, B9, B11–B12 as applicable | A3, A4                   | INV-10                          |
+| O1-V4                   | SPEC-E4; SPEC-B9                                   | A2, A4                   | INV-11                          |
+| O1-V5                   | SPEC-E3, E5                                        | A1, A2, A3               | INV-01, INV-05                  |
+| O1-V6                   | SPEC-E2, E5; SPEC-A4; applicable SPEC-C            | A1, A6, A8               | INV-02                          |
+| O1-V7                   | SPEC-E5; SPEC-C1–C3, C6–C7                         | A8                       | INV-04                          |
+| O1-V8                   | SPEC-E5                                            | A7                       | INV-13                          |
+| O1-V9                   | SPEC-E6                                            | A2, A7                   | INV-01, INV-13                  |
 
 #### O2 — Commitment Exercise and Fulfillment
 
-| Verification obligation | Principal Specification basis | Architecture realization | Principal invariant protection |
-|---|---|---|---|
-| O2-V1 | SPEC-X1; SPEC-A2, A7–A8 | A1, A2, A6 | INV-06, INV-07 |
-| O2-V2 | SPEC-X2; SPEC-A1–A2 | A2, A6 | INV-06 |
-| O2-V3 | SPEC-X3; SPEC-D1–D2 | A2, A3 | INV-05, INV-06 |
-| O2-V4 | SPEC-X4; SPEC-D3–D4 | A2, A3 | INV-05, INV-06 |
-| O2-V5 | SPEC-X5 | A2, A3 | INV-05, INV-06 |
-| O2-V6 | SPEC-X6 | A2, A3, A5 | INV-07 |
-| O2-V7 | SPEC-X7 | A3, A5 | INV-07 |
-| O2-V8 | SPEC-X6–X8; SPEC-A8–A11 | A5, A6 | INV-07, INV-09 |
-| O2-V9 | SPEC-X8 | A3, A5 | INV-07 |
-| O2-V10 | SPEC-X9–X11 | A1, A3, A5 | INV-08; INV-09 where applicable |
-| O2-V11 | SPEC-X11–X12; SPEC-B7 | A1, A3, A4 | INV-10, INV-11; INV-12 where applicable |
-| O2-V12 | SPEC-X12–X14 | A2, A7 | INV-13 |
+| Verification obligation | Principal Specification basis | Architecture realization | Principal invariant protection          |
+| ----------------------- | ----------------------------- | ------------------------ | --------------------------------------- |
+| O2-V1                   | SPEC-X1; SPEC-A2, A7–A8       | A1, A2, A6               | INV-06, INV-07                          |
+| O2-V2                   | SPEC-X2; SPEC-A1–A2           | A2, A6                   | INV-06                                  |
+| O2-V3                   | SPEC-X3; SPEC-D1–D2           | A2, A3                   | INV-05, INV-06                          |
+| O2-V4                   | SPEC-X4; SPEC-D3–D4           | A2, A3                   | INV-05, INV-06                          |
+| O2-V5                   | SPEC-X5                       | A2, A3                   | INV-05, INV-06                          |
+| O2-V6                   | SPEC-X6                       | A2, A3, A5               | INV-07                                  |
+| O2-V7                   | SPEC-X7                       | A3, A5                   | INV-07                                  |
+| O2-V8                   | SPEC-X6–X8; SPEC-A8–A11       | A5, A6                   | INV-07, INV-09                          |
+| O2-V9                   | SPEC-X8                       | A3, A5                   | INV-07                                  |
+| O2-V10                  | SPEC-X9–X11                   | A1, A3, A5               | INV-08; INV-09 where applicable         |
+| O2-V11                  | SPEC-X11–X12; SPEC-B7         | A1, A3, A4               | INV-10, INV-11; INV-12 where applicable |
+| O2-V12                  | SPEC-X12–X14                  | A2, A7                   | INV-13                                  |
 
 #### O3 — Backing-Affecting Shared-Resource Transition
 
-| Verification obligation | Principal Specification basis | Architecture realization | Principal invariant protection |
-|---|---|---|---|
-| O3-V1 | S1/O3; SPEC-C8; SPEC-B10 | A2, A4 | INV-12 |
-| O3-V2 | SPEC-B8, B10–B12; SPEC-C10 | A1, A3, A4 | INV-10 |
-| O3-V3 | E5–E6; applicable SPEC-D | A1, A3 | INV-05, INV-10 |
-| O3-V4 | E7; SPEC-B1–B6 | A3, A4 | INV-10 |
-| O3-V5 | SPEC-B8, B10–B12 | A3, A4 | INV-10, INV-11 |
-| O3-V6 | SPEC-B10 | A2, A4 | INV-11, INV-12 |
-| O3-V7 | SPEC-C8; SPEC-B10 | A2, A4 | INV-12 |
-| O3-V8 | SPEC-B10; SPEC-A4, A10–A11; applicable SPEC-D/C | A1, A2, A4, A6, A7 | INV-02, INV-07, INV-08, INV-13 as applicable |
+| Verification obligation | Principal Specification basis                   | Architecture realization | Principal invariant protection               |
+| ----------------------- | ----------------------------------------------- | ------------------------ | -------------------------------------------- |
+| O3-V1                   | S1/O3; SPEC-C8; SPEC-B10                        | A2, A4                   | INV-12                                       |
+| O3-V2                   | SPEC-B8, B10–B12; SPEC-C10                      | A1, A3, A4               | INV-10                                       |
+| O3-V3                   | E5–E6; applicable SPEC-D                        | A1, A3                   | INV-05, INV-10                               |
+| O3-V4                   | E7; SPEC-B1–B6                                  | A3, A4                   | INV-10                                       |
+| O3-V5                   | SPEC-B8, B10–B12                                | A3, A4                   | INV-10, INV-11                               |
+| O3-V6                   | SPEC-B10                                        | A2, A4                   | INV-11, INV-12                               |
+| O3-V7                   | SPEC-C8; SPEC-B10                               | A2, A4                   | INV-12                                       |
+| O3-V8                   | SPEC-B10; SPEC-A4, A10–A11; applicable SPEC-D/C | A1, A2, A4, A6, A7       | INV-02, INV-07, INV-08, INV-13 as applicable |
 
 #### D1–D4 — Derived Consequences
 
-| Verification obligation | Principal Specification basis | Architecture realization | Principal invariant protection |
-|---|---|---|---|
-| D1-V1 | SPEC-D1, D10–D11 | A3 | INV-05 |
-| D1-V2 | SPEC-D1–D2, D11 | A1, A2, A3 | INV-05 |
-| D1-V3 | SPEC-C1–C3, C6–C7 | A8 | INV-04 |
-| D2-V1 | SPEC-D3, D10–D11 | A3 | INV-05 |
-| D2-V2 | SPEC-D3–D4, D11 | A1, A2, A3 | INV-05; INV-06 when exercise is attempted |
-| D2-V3 | SPEC-C1–C3, C6–C7 | A8 | INV-04 |
-| D3-V1 | SPEC-D5–D6, D10–D11; SPEC-X11 | A3 | INV-05, INV-08 |
-| D3-V2 | SPEC-D5, D8 | A3, A5 | INV-08, INV-09 |
-| D3-V3 | SPEC-D6, D11 | A1, A2, A3 | INV-05, INV-08, INV-09 |
-| D3-V4 | SPEC-C1–C4, C6–C7 | A8 | INV-04, INV-09 |
-| D4-V1 | SPEC-D7, D10–D12 | A3 | INV-05 |
-| D4-V2 | SPEC-D7–D8 | A3; A5 where causal distinction applies | INV-08, INV-09 |
-| D4-V3 | SPEC-D7–D8, D13 | A1, A2, A3 | INV-05, INV-09 |
-| D4-V4 | SPEC-C1–C4, C6 | A8 | INV-04, INV-09 |
+| Verification obligation | Principal Specification basis | Architecture realization                | Principal invariant protection            |
+| ----------------------- | ----------------------------- | --------------------------------------- | ----------------------------------------- |
+| D1-V1                   | SPEC-D1, D10–D11              | A3                                      | INV-05                                    |
+| D1-V2                   | SPEC-D1–D2, D11               | A1, A2, A3                              | INV-05                                    |
+| D1-V3                   | SPEC-C1–C3, C6–C7             | A8                                      | INV-04                                    |
+| D2-V1                   | SPEC-D3, D10–D11              | A3                                      | INV-05                                    |
+| D2-V2                   | SPEC-D3–D4, D11               | A1, A2, A3                              | INV-05; INV-06 when exercise is attempted |
+| D2-V3                   | SPEC-C1–C3, C6–C7             | A8                                      | INV-04                                    |
+| D3-V1                   | SPEC-D5–D6, D10–D11; SPEC-X11 | A3                                      | INV-05, INV-08                            |
+| D3-V2                   | SPEC-D5, D8                   | A3, A5                                  | INV-08, INV-09                            |
+| D3-V3                   | SPEC-D6, D11                  | A1, A2, A3                              | INV-05, INV-08, INV-09                    |
+| D3-V4                   | SPEC-C1–C4, C6–C7             | A8                                      | INV-04, INV-09                            |
+| D4-V1                   | SPEC-D7, D10–D12              | A3                                      | INV-05                                    |
+| D4-V2                   | SPEC-D7–D8                    | A3; A5 where causal distinction applies | INV-08, INV-09                            |
+| D4-V3                   | SPEC-D7–D8, D13               | A1, A2, A3                              | INV-05, INV-09                            |
+| D4-V4                   | SPEC-C1–C4, C6                | A8                                      | INV-04, INV-09                            |
 
 ### 11.3 Cross-Cutting Verification Traceability
 
 #### Invariant Closure
 
 | Closure obligation | Primary invariant basis |
-|---|---|
-| IVC-01 | INV-01 |
-| IVC-02 | INV-02 |
-| IVC-03 | INV-03 |
-| IVC-04 | INV-03 |
-| IVC-05 | INV-04 |
-| IVC-06 | INV-05 |
-| IVC-07 | INV-06 |
-| IVC-08 | INV-07 |
-| IVC-09 | INV-08 |
-| IVC-10 | INV-09 |
-| IVC-11 | INV-10 |
-| IVC-12 | INV-11 |
-| IVC-13 | INV-13 |
+| ------------------ | ----------------------- |
+| IVC-01             | INV-01                  |
+| IVC-02             | INV-02                  |
+| IVC-03             | INV-03                  |
+| IVC-04             | INV-03                  |
+| IVC-05             | INV-04                  |
+| IVC-06             | INV-05                  |
+| IVC-07             | INV-06                  |
+| IVC-08             | INV-07                  |
+| IVC-09             | INV-08                  |
+| IVC-10             | INV-09                  |
+| IVC-11             | INV-10                  |
+| IVC-12             | INV-11                  |
+| IVC-13             | INV-13                  |
 
 INV-12 is discharged through O3-V7 plus complete Section 10 economic-effect-path coverage.
 
 #### Derivation Families
 
-| Derivation class | Principal Specification basis | Architecture |
-|---|---|---|
-| Commitment derivations | E1–E6; SPEC-D1–D4; applicable SPEC-C3 | A1, A3, A8 |
-| Fulfillment derivations | E4; SPEC-X6–X9; SPEC-A8–A11 | A3, A5 |
-| Backing derivations | E6–E7; SPEC-B1–B12 | A3, A4 |
-| Derived-consequence derivations | SPEC-D1–D13 | A3; A8 for future dependency |
-| Prospective-state derivations | SPEC-E4; SPEC-B7, B9, B10, B12 | A3, A4 |
-| Authoritative reconstruction | SPEC-C1–C3, C6–C7 | A3, A8 |
-| Protected Execution Service qualification equivalence | SPEC-B1, SPEC-B3, applicable SPEC-B5 | A3, A5; A4 where backing consumes the determination |
+| Derivation class                                      | Principal Specification basis         | Architecture                                        |
+| ----------------------------------------------------- | ------------------------------------- | --------------------------------------------------- |
+| Commitment derivations                                | E1–E6; SPEC-D1–D4; applicable SPEC-C3 | A1, A3, A8                                          |
+| Fulfillment derivations                               | E4; SPEC-X6–X9; SPEC-A8–A11           | A3, A5                                              |
+| Backing derivations                                   | E6–E7; SPEC-B1–B12                    | A3, A4                                              |
+| Derived-consequence derivations                       | SPEC-D1–D13                           | A3; A8 for future dependency                        |
+| Prospective-state derivations                         | SPEC-E4; SPEC-B7, B9, B10, B12        | A3, A4                                              |
+| Authoritative reconstruction                          | SPEC-C1–C3, C6–C7                     | A3, A8                                              |
+| Protected Execution Service qualification equivalence | SPEC-B1, SPEC-B3, applicable SPEC-B5  | A3, A5; A4 where backing consumes the determination |
 
 #### Information Continuity
 
@@ -797,6 +819,7 @@ Principal traces include:
 - reachable-state completeness → SPEC-C11–C12;
 - economic-effect path completeness → SPEC-C8;
 - derivation-surface completeness → S3; SPEC-C3;
+- currency-denominational completeness → S3; applicable SPEC-B1–B12;
 - failure-domain completeness → SPEC-E6, SPEC-X14, SPEC-C11–C12;
 - Sequence Semantics Preservation → SPEC-C7, SPEC-C11, SPEC-C13.
 
