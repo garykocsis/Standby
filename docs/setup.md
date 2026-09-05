@@ -766,17 +766,15 @@ forge test -vvv
 
 # Remappings
 
-Standby currently relies on Foundry's dependency-generated remappings.
+Standby defines explicit Solidity dependency remappings in the repository-root `remappings.txt`.
 
-The validated Uniswap v4 core resolution is:
+The validated remappings are:
 
 ```text
-@uniswap/v4-core/ -> lib/v4-hooks-public/lib/v4-core/
-````
-
-Do not add redundant remappings unless the existing dependency resolution no longer works or a new dependency requires one.
-
-Any remapping change that affects imported implementation code should be treated as a dependency/setup change and documented here.
+forge-std/ -> lib/forge-std/src/
+v4-core/ -> lib/v4-hooks-public/lib/v4-core/src/
+v4-hooks-public/ -> lib/v4-hooks-public/
+v4-periphery/ -> lib/v4-hooks-public/lib/v4-periphery/
 
 ---
 
@@ -793,3 +791,4 @@ If a dependency revision changes:
 5. update `docs/project-status.md` only after the new baseline has been validated.
 
 A dependency upgrade must not silently invalidate previously closed verification evidence.
+````

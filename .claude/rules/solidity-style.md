@@ -38,6 +38,66 @@ Optimize only after correctness is established and only when the optimization do
 
 ---
 
+# Naming
+
+## Parameters
+
+Function and constructor parameters that require differentiation from state variables, immutables, struct fields, or similarly named values use a leading underscore:
+
+```solidity
+constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
+```
+
+Do not use trailing-underscore parameter naming:
+
+```solidity
+// Wrong.
+constructor(IPoolManager poolManager_) BaseHook(poolManager_) {}
+```
+
+Apply the prefix where differentiation is actually required. Do not mechanically prefix ordinary local variables or struct members.
+
+## State variables
+
+Do not introduce an `s_` prefix convention for state variables. Standby does not use that convention.
+
+---
+
+# External Dependency Imports
+
+Import external Solidity dependencies through the repository remappings.
+
+Canonical external prefixes include:
+
+- `v4-core/...`
+- `v4-hooks-public/...`
+- `v4-periphery/...`
+
+```solidity
+import {BaseHook} from "v4-hooks-public/src/base/BaseHook.sol";
+import {HookMiner} from "v4-hooks-public/src/utils/HookMiner.sol";
+
+import {PoolManager} from "v4-core/PoolManager.sol";
+import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
+import {Hooks} from "v4-core/libraries/Hooks.sol";
+```
+
+Do not reach into `lib/` with filesystem-relative traversal for an external dependency:
+
+```solidity
+// Wrong.
+import {Hooks} from "../lib/v4-hooks-public/lib/v4-core/src/libraries/Hooks.sol";
+import {Hooks} from "../../lib/v4-hooks-public/lib/v4-core/src/libraries/Hooks.sol";
+```
+
+The purpose is one canonical source identity per external dependency type, so that types such as `IPoolManager`, `PoolKey`, `SwapParams`, and `Hooks.Permissions` are never referred to through competing paths.
+
+Relative imports remain appropriate for Standby-owned repository source.
+
+A remapping change that affects imported implementation code is a dependency/setup change and must be recorded in `docs/setup.md`.
+
+---
+
 # Solidity Source Ordering
 
 Use the following top-level source order:

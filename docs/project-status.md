@@ -1,10 +1,10 @@
 # Standby — Project Status
 
-**Last Updated:** September 4, 2026
+**Last Updated:** September 5, 2026
 **Project Phase:** Solidity / Reference Implementation
-**Current Implementation Slice:** F0 — v4 Infrastructure
-**Current Gate:** G0 — Vanilla v4 Infrastructure
-**Status:** IN PROGRESS
+**Current Implementation Slice:** F1 — Deterministic Economic Fixture
+**Last Closed Gate:** G0 — Vanilla v4 Infrastructure (CLOSED / PASS)
+**Status:** F0 COMPLETE — F1 NOT STARTED
 
 ---
 
@@ -41,13 +41,13 @@ Implementation proceeds through the verification-gated F0–F10 ladder defined i
 
 The current slice is:
 
-> **F0 — v4 Infrastructure**
+> **F1 — Deterministic Economic Fixture**
 
-The current gate is:
+The last closed gate is:
 
-> **G0 — Vanilla v4 Infrastructure**
+> **G0 — Vanilla v4 Infrastructure — CLOSED / PASS**
 
-No Standby economic behavior is authorized until the required upstream infrastructure foundation has been established and verified.
+The required upstream infrastructure foundation has been established and verified, so F1 is now the next authorized implementation slice.
 
 ---
 
@@ -57,8 +57,8 @@ Current implementation sequence:
 
 | Slice | Responsibility                                    | Status                       |
 | ----- | ------------------------------------------------- | ---------------------------- |
-| F0    | v4 Infrastructure                                 | **IN PROGRESS**              |
-| F1    | Deterministic Economic Fixture                    | NOT STARTED                  |
+| F0    | v4 Infrastructure                                 | **COMPLETE — G0 CLOSED**     |
+| F1    | Deterministic Economic Fixture                    | **NEXT / NOT STARTED**       |
 | F2    | EligibilityRegistry                               | NOT STARTED                  |
 | F3    | StandbyHook Trust + PES Configuration             | NOT STARTED                  |
 | F4    | Commitment Storage + Bounded References           | NOT STARTED                  |
@@ -81,11 +81,11 @@ Advancement requires the implementation and verification evidence required by th
 
 ---
 
-## 4. Current F0 Objective
+## 4. F0 Objective — Complete
 
-F0 establishes the deterministic real Uniswap v4 execution foundation required by all later Standby implementation slices.
+F0 established the deterministic real Uniswap v4 execution foundation required by all later Standby implementation slices.
 
-Complete G0 must prove:
+Complete G0 required proof that:
 
 1. a real Uniswap v4 `PoolManager` is deployed or resolved;
 2. a vanilla v4 pool can be initialized;
@@ -93,13 +93,13 @@ Complete G0 must prove:
 4. vanilla swaps can execute through the real v4 execution and accounting path;
 5. the canonical StandbyHook deployment procedure produces a Hook address whose permission bits match the declared Hook permissions.
 
-Items 1–4 have initial passing implementation evidence.
+Items 1–5 all have passing implementation and verification evidence.
 
-Item 5 has not yet been implemented.
+That evidence has been architecturally reviewed and the gate has been explicitly closed.
 
 Therefore:
 
-> **G0 remains OPEN.**
+> **G0 is CLOSED / PASS.**
 
 ---
 
@@ -196,6 +196,55 @@ Each directional test begins from its own deterministic initialized pool state.
 
 The tests verify token balance effects showing that the actual swap occurred in the requested direction.
 
+### `src/StandbyHook.sol`
+
+The minimum production Standby Uniswap v4 Hook.
+
+At F0 it carries only infrastructure-level behavior:
+
+- immutable PoolManager binding through the pinned `BaseHook` / `ImmutableState`;
+- the required Standby callback-permission surface returned by `getHookPermissions()`.
+
+The Hook owns its permission declaration only. The Hook-address mining requirement belongs to the
+deployment procedure, not to the production Hook source.
+
+No Standby economic state or enforcement logic exists yet. The four enabled callbacks fail closed with
+`HookNotImplemented` until their owning implementation slices supply authoritative behavior.
+
+### `script/DeployStandbyHook.s.sol`
+
+The single canonical StandbyHook deployment procedure, reused by tests, deterministic local Anvil
+deployment, and later public/production deployment.
+
+It owns `REQUIRED_HOOK_PERMISSION_MASK`, derived from the pinned Uniswap v4 `Hooks` flag constants.
+This is a separate representation from the Hook's own permission declaration; their equivalence is
+established by verification rather than by construction.
+
+`deployStandbyHook(IPoolManager, address create2Deployer)` mines the Hook address/salt with the pinned
+`HookMiner`, performs the salted deployment, and then validates the deployed address permission bits,
+the pinned `Hooks.validateHookPermissions` agreement between address and declared struct, and the
+PoolManager binding.
+
+`run()` composes infrastructure resolution, broadcast, and that procedure.
+
+The deployer is fixture-agnostic.
+
+### `script/helpers/HelperConfig.s.sol` and `script/helpers/NetworkConfig.sol`
+
+Infrastructure configuration only: chain identity and the authoritative PoolManager address.
+
+On the deterministic local environment a real pinned `PoolManager` is deployed. Chains without a
+validated Uniswap v4 infrastructure configuration are rejected with `HelperConfig__UnsupportedNetwork`.
+
+These files contain no Standby economic fixture or service semantics.
+
+### `test/integration/StandbyHookDeployment.t.sol`
+
+Integration evidence for the canonical Hook deployment procedure (G0-H1 through G0-H5).
+
+The suite deliberately does not inherit `BaseV4Test` and deploys no currencies, no pool, and no Standby
+economic fixture.
+
 ---
 
 ## 8. Current Verification Evidence
@@ -220,6 +269,45 @@ The official pinned v4-core test helpers are used rather than replacing PoolMana
 
 This constitutes initial evidence for G0 requirements 1–4.
 
+The canonical StandbyHook deployment test has been run successfully:
+
+```text
+forge test --match-path test/integration/StandbyHookDeployment.t.sol -vv
+```
+
+12 tests pass, providing evidence for G0 requirement 5:
+
+- the production Hook declares exactly `beforeAddLiquidity`, `beforeRemoveLiquidity`, `beforeSwap`, and
+  `afterSwap`, with every other callback and every return-delta permission disabled (G0-H1);
+- an independent reconstruction of the permission mask from the declared struct and the pinned `Hooks`
+  flag constants reproduces the production mining mask and the frozen value `0x0AC0` / `2752` (G0-H1);
+- the deployed Hook address encodes exactly those permission bits, checked flag-by-flag against the
+  pinned `Hooks` implementation and accepted by the pinned `Hooks.validateHookPermissions` (G0-H2);
+- the deployed Hook is bound to the intended real PoolManager, and an enabled callback rejects a
+  non-PoolManager caller with `NotPoolManager` (G0-H3);
+- the deployed address equals the deterministic CREATE2 address computed by the pinned `HookMiner` for
+  the mined salt, and the procedure composes with `HelperConfig` infrastructure resolution (G0-H4);
+- a second independent Hook deploys against a second real PoolManager with no currencies, pool,
+  ordering, protected direction, or service configuration in existence (G0-H5).
+
+The canonical script entrypoint has additionally been executed in Foundry script simulation:
+
+```text
+forge script script/DeployStandbyHook.s.sol
+```
+
+It resolved a real PoolManager, mined a salt, and deployed a Hook whose address encodes `0x0AC0`
+through the deterministic CREATE2 factory path used by broadcasting deployments.
+
+The full repository suite passes under both the default and `ci` profiles:
+
+```text
+forge fmt --check
+forge build --sizes
+forge test
+FOUNDRY_PROFILE=ci forge test
+```
+
 These requirements should receive a final focused review before G0 is closed.
 
 ---
@@ -228,48 +316,49 @@ These requirements should receive a final focused review before G0 is closed.
 
 ### G0 — Vanilla v4 Infrastructure
 
-**Status: OPEN / PARTIAL PASS**
+**Status: CLOSED / PASS**
 
-Current assessment:
+Reviewed and explicitly closed on September 5, 2026.
 
-| Requirement                                | Status          |
-| ------------------------------------------ | --------------- |
-| Real PoolManager deployed/resolved         | PASS            |
-| Vanilla pool initialization                | PASS            |
-| Vanilla liquidity addition                 | PASS            |
-| Vanilla swap execution                     | PASS            |
-| Direction-neutral infrastructure evidence  | PASS            |
-| Canonical StandbyHook deployment procedure | NOT IMPLEMENTED |
-| Hook address permission validation         | NOT IMPLEMENTED |
+Final assessment:
 
-G0 cannot close until the canonical StandbyHook deployment responsibility has been implemented and verified.
+| Requirement                                | Status |
+| ------------------------------------------ | ------ |
+| Real PoolManager deployed/resolved         | PASS   |
+| Vanilla pool initialization                | PASS   |
+| Vanilla liquidity addition                 | PASS   |
+| Vanilla swap execution                     | PASS   |
+| Direction-neutral infrastructure evidence  | PASS   |
+| Canonical StandbyHook deployment procedure | PASS   |
+| Hook address permission validation         | PASS   |
+| Hook PoolManager binding                   | PASS   |
+| Deployment fixture independence            | PASS   |
+
+Every G0 requirement has passing implementation and verification evidence.
+
+F1 may now depend on the F0 infrastructure and the canonical StandbyHook deployment procedure.
 
 ---
 
 ## 10. Current Blocker
 
-The next unresolved F0 responsibility is:
+There is no unresolved F0 implementation responsibility and no open gate.
 
-> **Canonical StandbyHook deployment with deterministic Hook-address permission validation.**
+The next unstarted responsibility is:
 
-The implementation must establish the canonical deployment procedure used across:
+> **F1 — Deterministic Economic Fixture.**
 
-- tests;
-- local Anvil deployment;
-- public deployment where applicable;
-- production-compatible deployment.
+F1 is authorized but has not been started. It must not be implemented until it is explicitly tasked.
 
-The procedure must:
+Known limitations carried forward from F0, none of which blocked G0:
 
-1. resolve the intended `PoolManager`;
-2. derive the required Hook permission mask;
-3. mine/find an address or salt satisfying the Uniswap v4 Hook-address permission encoding;
-4. deploy `StandbyHook`;
-5. verify that the deployed address permissions match the Hook's declared permissions;
-6. bind the Hook immutably to the intended `PoolManager`;
-7. report the deployed Hook address.
-
-The deployment mechanism must remain fixture-agnostic.
+- `HelperConfig` currently resolves infrastructure only for the deterministic local environment
+  (chain id `31337`). Public-chain PoolManager resolution is rejected rather than guessed, and must be
+  added with validated addresses before any public deployment;
+- the broadcasting `run()` path is verified in Foundry script simulation, not against a live Anvil
+  node with `--broadcast`;
+- the four enabled Hook callbacks intentionally fail closed with `HookNotImplemented`. `StandbyHook`
+  must not be attached to a live pool until its enforcement slices are implemented.
 
 ---
 
@@ -326,7 +415,7 @@ The canonical Standby economic fixture belongs to:
 
 > **F1 — Deterministic Economic Fixture**
 
-It is not part of the current F0 infrastructure implementation.
+It is not part of the completed F0 infrastructure implementation. F1 is the next authorized slice, but it has not been started.
 
 The frozen fixture will later use:
 
@@ -461,15 +550,13 @@ The root `CLAUDE.md` will define the repository operating rules and document aut
 
 ## 18. Next Action
 
-Before further Solidity implementation:
+G0 has been reviewed and closed, so the next action is:
 
-1. establish the root `CLAUDE.md`;
-2. verify Claude Code can correctly orient itself using the repository documentation and current status;
-3. review the current F0 vanilla infrastructure through that workflow;
-4. resolve any review findings;
-5. continue with the remaining F0 StandbyHook deployment responsibility.
+> **F1 — Deterministic Economic Fixture.**
 
-Claude Code should not begin F1 or any Standby economic implementation until G0 has been reviewed and closed.
+Claude Code must not begin F1 until it is explicitly tasked, and must not implement any Standby
+economic derivation, commitment, eligibility, or enforcement behavior as part of it. F1 establishes the
+deterministic economic fixture only; its own gate governs advancement beyond it.
 
 ---
 
@@ -478,23 +565,26 @@ Claude Code should not begin F1 or any Standby economic implementation until G0 
 **Validated State**
 
 - Standby implementation phase has begun.
-- F0 is active.
+- F0 is complete and G0 is closed.
 - Toolchain/dependency baseline is validated.
 - Real vanilla v4 pool initialization works.
 - Real vanilla v4 liquidity addition works.
 - Real vanilla v4 swaps work.
 - Both swap directions have passing infrastructure evidence.
 - Generic F0 infrastructure remains direction-neutral.
+- The minimum production `StandbyHook` exists and deploys through the canonical deterministic path.
+- The deployed Hook address encodes exactly `0x0AC0` and is immutably bound to the intended PoolManager.
+- Hook deployment is fixture-agnostic.
 - No Standby economic behavior has been introduced.
 
 **Current Gate**
 
-- G0 — OPEN / PARTIAL PASS.
+- G0 — CLOSED / PASS. No gate is currently open.
 
 **Next Blocker**
 
-- Canonical StandbyHook deployment and Hook-address permission validation.
+- F1 — Deterministic Economic Fixture has not been started.
 
 **Immediate Next Step**
 
-- Establish `CLAUDE.md` and Claude Code repository operating protocol before further implementation.
+- Begin F1 — Deterministic Economic Fixture when explicitly tasked.
