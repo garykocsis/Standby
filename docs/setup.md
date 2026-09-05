@@ -598,3 +598,170 @@ The next work begins the actual implementation plan with:
 > **F0 — v4 Infrastructure / Deployment Foundation**
 
 The first F0 technical decision is to inspect, select, and pin the mutually compatible Uniswap v4 dependency baseline before implementing Standby-specific protocol behavior.
+
+# Validated Toolchain Baseline
+
+The current Standby implementation baseline is:
+
+- **Foundry:** `1.3.5-stable`
+- **Foundry Commit:** `9979a41b5daa5da1572d973d7ac5a3dd2afc0221`
+- **Solidity:** `0.8.26`
+- **EVM Version:** `cancun`
+- **via IR:** disabled
+- **Optimizer:** enabled
+- **Optimizer Runs:** `800`
+- **Bytecode Hash:** `none`
+- **FFI:** disabled by default
+
+The repository configuration in `foundry.toml` is authoritative for the active Foundry build settings.
+
+A change to the compiler, EVM target, optimizer settings, or other execution-relevant configuration must be treated as a toolchain change and requires rerunning the verification gates that depend on that configuration.
+
+---
+
+# Uniswap v4 Dependency Baseline
+
+Standby uses `Uniswap/v4-hooks-public` as the dependency anchor.
+
+Validated pinned revisions:
+
+```text
+v4-hooks-public
+0f731d5de0f4fd60b506b55754d5e6ff086eab7d
+
+v4-core
+d153b048868a60c2403a3ef5b2301bb247884d46
+
+v4-periphery
+07336f2144f522874e2c3c85e04d1d3f8d5fa471
+```
+
+These exact checked-out git revisions define the validated Standby Uniswap v4 implementation baseline.
+
+Do not substitute API assumptions from RangeGuard, another Uniswap v4 repository, tutorials, or a different dependency revision.
+
+When implementation depends on a Uniswap v4 API or callback behavior, inspect the pinned source directly.
+
+---
+
+# Dependency Initialization
+
+After cloning the repository, initialize the Git submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
+Verify the dependency state with:
+
+```bash
+git submodule status --recursive
+```
+
+The checked-out revisions should match the validated dependency baseline above.
+
+---
+
+## Fresh Clone Setup
+
+For a fresh local checkout of Standby:
+
+```bash
+git clone git@github.com:garykocsis/Standby.git
+cd Standby
+git submodule update --init --recursive
+forge --version
+forge build
+forge test
+```
+
+Then verify the checked-out dependency revisions:
+
+```bash
+git submodule status --recursive
+```
+
+The resulting dependency revisions and effective toolchain must match the validated baselines documented above.
+
+If they do not match, resolve the environment or dependency discrepancy before beginning implementation. Do not silently upgrade or replace pinned dependencies to make the repository compile.
+
+--
+
+# Foundry Verification
+
+Verify the installed Foundry version:
+
+```bash
+forge --version
+```
+
+The validated baseline is:
+
+```text
+forge Version: 1.3.5-stable
+Commit SHA: 9979a41b5daa5da1572d973d7ac5a3dd2afc0221
+```
+
+Verify the effective repository configuration when necessary with:
+
+```bash
+forge config
+```
+
+The important effective values should include:
+
+```text
+solc = 0.8.26
+evm_version = cancun
+via_ir = false
+optimizer = true
+optimizer_runs = 800
+bytecode_hash = none
+ffi = false
+```
+
+---
+
+# Initial Repository Validation
+
+After dependency initialization, run:
+
+```bash
+forge fmt --check
+forge build
+forge test
+```
+
+During implementation, focused test commands may be used first, but a clean build and the verification required by the active implementation gate must pass before that gate can close.
+
+---
+
+# Remappings
+
+Standby currently relies on Foundry's dependency-generated remappings.
+
+The validated Uniswap v4 core resolution is:
+
+```text
+@uniswap/v4-core/ -> lib/v4-hooks-public/lib/v4-core/
+```
+
+Do not add redundant remappings unless the existing dependency resolution no longer works or a new dependency requires one.
+
+Any remapping change that affects imported implementation code should be treated as a dependency/setup change and documented here.
+
+---
+
+# Dependency Change Discipline
+
+Do not upgrade or replace the pinned Uniswap v4 dependencies as routine implementation work.
+
+If a dependency revision changes:
+
+1. record the new revision in this document;
+2. inspect any affected APIs directly;
+3. rebuild the repository;
+4. rerun all verification gates whose implementation depends on the changed dependency;
+5. update `docs/project-status.md` only after the new baseline has been validated.
+
+A dependency upgrade must not silently invalidate previously closed verification evidence.
