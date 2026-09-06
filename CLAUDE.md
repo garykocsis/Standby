@@ -410,6 +410,22 @@ Update live implementation documentation only when appropriate and explicitly wi
 
 `docs/project-status.md` should reflect validated implementation state, not aspirational state.
 
+## Project Status Synchronization
+
+`docs/project-status.md` must be synchronized after an implementation gate is explicitly closed or a new slice is explicitly authorized.
+
+Claude must not infer, self-declare, or record a gate as closed merely because implementation is complete or verification commands pass.
+
+During an implementation session, report the proposed gate assessment and stop at the task completion boundary as required by Gate Authority.
+
+After external gate review explicitly closes the gate, a subsequent instruction may authorize Claude to synchronize `docs/project-status.md` with that validated state.
+
+When synchronizing the status document, update all affected current-state sections consistently rather than changing only the header or implementation ladder.
+
+A project-status synchronization records already-authorized state. It does not itself close a gate or authorize a downstream implementation slice.
+
+When a new implementation session explicitly authorizes a downstream slice, Claude may synchronize `docs/project-status.md` to record that slice as current or in progress. Receiving implementation authorization does not close that slice's gate or authorize any further downstream slice.
+
 `docs/setup.md` should be updated when reproducible developer setup changes, including material changes to:
 
 - dependencies;
