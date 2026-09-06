@@ -25,6 +25,65 @@ was added to the document.
 
 ---
 
+### 2 — G4 closed externally; synchronize `project-status.md` to F4 COMPLETE / G4 CLOSED
+
+> Update **only** `docs/project-status.md` to reflect the independently verified F4/G4 result.
+>
+> Authoritative status:
+>
+> > **F4 — Commitment Storage + Bounded Enforcement References: COMPLETE**
+> > **G4 — Persistence / Bounded Reference Gate: PASS / CLOSED**
+>
+> The next implementation blocker is:
+>
+> > **F5 — Authoritative Derivation Kernel**
+>
+> Make only the minimum status-bearing changes required for `docs/project-status.md` to consistently
+> reflect that state.
+>
+> Specifically update existing status/frontier fields where necessary, such as: document/current status;
+> current objective; implementation ladder F4/G4 status; current blocker; next action; handoff summary.
+>
+> **Do not:** add new explanatory or implementation-description sections; add commentary about how F4 was
+> implemented; add G4 evidence or test-result prose unless an existing status field strictly requires it;
+> modify any frozen/canonical document; modify `docs/setup.md`; modify source code or tests; modify any
+> file other than `docs/project-status.md`; begin F5; make unrelated wording, formatting, or cleanup
+> changes.
+>
+> Preserve the existing structure and wording wherever a status change is not required.
+>
+> The intended result is strictly: **F4 COMPLETE / G4 CLOSED → next blocker F5 Authoritative Derivation
+> Kernel**.
+>
+> After the edit, report exactly which existing status-bearing locations in `docs/project-status.md` were
+> changed and stop.
+
+External gate review closed G4 and authorized the corresponding status synchronization. This instruction
+records an already-authorized state; it does not itself constitute the gate assessment, and it does not
+authorize F5 implementation.
+
+**Consequence:** `docs/project-status.md` was updated in six existing status-bearing locations and no
+other file was touched (19 insertions, 20 deletions):
+
+1. header block — Current Implementation Slice → `F5 — Authoritative Derivation Kernel`; Last Closed Gate
+   → `G4 — Persistence / Bounded Reference Gate (CLOSED / PASS)`; Status → `F0 COMPLETE — F1 COMPLETE —
+   F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 NOT STARTED`;
+2. §2 Current Objective — current slice → F5, last closed gate → G4, and the summary sentence now records
+   F0–F4 as implemented, verified, and explicitly gate-closed with F5 next and not started;
+3. §3 Canonical Implementation Ladder — F4 row → `COMPLETE — G4 CLOSED`; F5 row → `NEXT / NOT STARTED`;
+4. §10 Current Blocker — no unresolved F0–F4 responsibility and no open gate; next unstarted
+   responsibility → F5, authorized but not started. The carried-forward F0 known-limitations list below it
+   was left unchanged;
+5. §18 Next Action — G4 reviewed and closed, so the next action is F5, to begin when explicitly tasked;
+6. §19 Current Handoff Summary — Validated State gains F4 complete / G4 closed; Current Gate → `G4 —
+   CLOSED / PASS. No gate is currently open.`; Next Blocker → F5 not started; Immediate Next Step → begin
+   F5 when explicitly tasked.
+
+No new section was added, no implementation description or G4 evidence prose was added, no other document
+or source file was modified, and F5 was not started.
+
+---
+
 ## Task Completion Report — F4 Commitment Storage + Bounded Enforcement References
 
 ### Files Inspected
@@ -372,6 +431,12 @@ and the bounded index. F5 is not started and is not authorized by this session.
 
 ### Prompt Audit
 
-All material follow-up instructions were recorded in this log. **1 material follow-up prompt** was
+All material follow-up instructions were recorded in this log. **2 material follow-up prompts** were
 recorded: prompt 1, which rejected the proposed addition of implementation description to
-`docs/project-status.md` and narrowed that change to status fields only.
+`docs/project-status.md` and narrowed that change to status fields only; and prompt 2, which recorded the
+external closure of G4 and authorized the corresponding status-only synchronization of
+`docs/project-status.md`.
+
+Prompt 2 was received after this report was first appended, and the count above was updated accordingly.
+The **Proposed Gate Assessment** section is left as it stood at the end of implementation: it is the
+session's proposed assessment, not the gate decision. The gate decision is recorded in prompt 2.
