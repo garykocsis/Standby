@@ -792,3 +792,37 @@ If a dependency revision changes:
 
 A dependency upgrade must not silently invalidate previously closed verification evidence.
 ````
+
+---
+
+# Environment Variables
+
+Standby reads no environment variables during `forge build` or `forge test`. The test suite constructs
+every deployment input explicitly, so a fresh clone runs the full suite with no local configuration.
+
+Deployment scripts are different. `script/DeployStandbyHook.s.sol` binds the Hook's realization-wide
+trust dependencies at construction, and those are deployment decisions rather than resolvable
+infrastructure, so the script entrypoint `run()` requires them in the environment:
+
+| Variable                           | Meaning                                                          |
+| ---------------------------------- | ---------------------------------------------------------------- |
+| `STANDBY_CONFIGURATION_AUTHORITY`  | The only account authorized to configure and activate the service |
+| `STANDBY_TRUSTED_UNIVERSAL_ROUTER` | The trusted ordinary-swap perimeter                               |
+| `STANDBY_TRUSTED_POSITION_MANAGER` | The trusted liquidity perimeter                                   |
+
+They are required rather than defaulted. A Hook deployed against a guessed trust basis would be either
+wrong or permanently unconfigurable, and neither belongs in a canonical deployment path.
+
+Local script simulation therefore looks like:
+
+```bash
+STANDBY_CONFIGURATION_AUTHORITY=0x... \
+STANDBY_TRUSTED_UNIVERSAL_ROUTER=0x... \
+STANDBY_TRUSTED_POSITION_MANAGER=0x... \
+forge script script/DeployStandbyHook.s.sol
+```
+
+The reusable procedure `deployStandbyHook(...)` takes the same values as explicit arguments, so tests and
+later composed deployment scripts supply them directly and never read the environment.
+
+`.env` is git-ignored. Never commit deployment keys or addresses that carry authority.

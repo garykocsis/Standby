@@ -14,8 +14,9 @@ import {PoolManager} from "v4-core/PoolManager.sol";
 import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
+import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
-import {SwapParams} from "v4-core/types/PoolOperation.sol";
+import {ModifyLiquidityParams, SwapParams} from "v4-core/types/PoolOperation.sol";
 
 import {ImmutableState} from "v4-periphery/src/base/ImmutableState.sol";
 
@@ -29,9 +30,12 @@ import {StandbyHook} from "../../src/StandbyHook.sol";
                              CONTRACTS
 //////////////////////////////////////////////////////////////*/
 
-/// @notice Integration evidence for the canonical StandbyHook deployment procedure (G0-H1..G0-H5).
+/// @notice Integration evidence for the canonical StandbyHook deployment procedure (G0-H1..G0-H5, G3-H).
 /// @dev This contract deliberately does not inherit `BaseV4Test` and deploys no currencies, no pool,
 ///      and no Standby economic fixture. Hook deployment must be provable without any of them.
+///
+///      Every role the Hook is deployed with is a distinct address, so no assertion here can pass
+///      because two semantically distinct trust roles happen to be the same account.
 contract StandbyHookDeploymentTest is Test {
     /*//////////////////////////////////////////////////////////////
                            STATE VARIABLES
@@ -46,6 +50,10 @@ contract StandbyHookDeploymentTest is Test {
     StandbyHook internal hook;
     bytes32 internal hookSalt;
 
+    address internal configurationAuthority;
+    address internal trustedUniversalRouter;
+    address internal trustedPositionManager;
+
     /*//////////////////////////////////////////////////////////////
                                 SETUP
     //////////////////////////////////////////////////////////////*/
@@ -55,7 +63,17 @@ contract StandbyHookDeploymentTest is Test {
         poolManager = new PoolManager(address(this));
         deployScript = new DeployStandbyHook();
 
-        (hook, hookSalt) = deployScript.deployStandbyHook(IPoolManager(address(poolManager)), address(deployScript));
+        configurationAuthority = makeAddr("configurationAuthority");
+        trustedUniversalRouter = makeAddr("trustedUniversalRouter");
+        trustedPositionManager = makeAddr("trustedPositionManager");
+
+        (hook, hookSalt) = deployScript.deployStandbyHook(
+            IPoolManager(address(poolManager)),
+            address(deployScript),
+            configurationAuthority,
+            trustedUniversalRouter,
+            trustedPositionManager
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -167,13 +185,74 @@ contract StandbyHookDeploymentTest is Test {
         assertEq(address(hook.poolManager()), address(poolManager), "hook must bind the intended PoolManager");
     }
 
-    /// @notice Proves the binding is enforced: an enabled callback rejects a non-PoolManager caller.
-    function test_deployedHook_rejectsCallbacksFromNonPoolManager() public {
+    /// @notice Proves the binding is enforced: every enabled callback rejects a non-PoolManager caller.
+    /// @dev G3-H 9. Callback enablement defines the enforcement surface; PoolManager authentication
+    ///      defines the authoritative callback boundary. A fabricated direct invocation of any of the
+    ///      four enabled callbacks cannot establish Standby economic truth, whoever the caller claims
+    ///      the originating actor is.
+    function test_deployedHook_rejectsEveryEnabledCallbackFromNonPoolManager() public {
         PoolKey memory key;
-        SwapParams memory params;
+        SwapParams memory swapParams;
+        ModifyLiquidityParams memory liquidityParams;
+        BalanceDelta delta;
 
         vm.expectRevert(ImmutableState.NotPoolManager.selector);
-        hook.beforeSwap(address(this), key, params, "");
+        hook.beforeSwap(address(this), key, swapParams, "");
+
+        vm.expectRevert(ImmutableState.NotPoolManager.selector);
+        hook.afterSwap(address(this), key, swapParams, delta, "");
+
+        vm.expectRevert(ImmutableState.NotPoolManager.selector);
+        hook.beforeAddLiquidity(address(this), key, liquidityParams, "");
+
+        vm.expectRevert(ImmutableState.NotPoolManager.selector);
+        hook.beforeRemoveLiquidity(address(this), key, liquidityParams, "");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                     G3-H — IMMUTABLE TRUST FIDELITY
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Proves every realization-wide trust dependency is exactly the intended one.
+    function test_deployedHook_bindsEveryIntendedTrustDependency() public view {
+        assertEq(address(hook.poolManager()), address(poolManager), "PoolManager fidelity");
+        assertEq(hook.i_configurationAuthority(), configurationAuthority, "configuration authority fidelity");
+        assertEq(hook.i_trustedUniversalRouter(), trustedUniversalRouter, "ordinary-swap perimeter fidelity");
+        assertEq(hook.i_trustedPositionManager(), trustedPositionManager, "liquidity perimeter fidelity");
+    }
+
+    /// @notice Proves the ordinary-swap and liquidity perimeters are two distinct trusted roles.
+    /// @dev A single generic trusted-router concept would be unable to hold two different addresses and
+    ///      report each back under its own role.
+    function test_deployedHook_keepsTheTwoTrustedPerimeterRolesDistinct() public {
+        assertNotEq(trustedUniversalRouter, trustedPositionManager, "the fixture must use distinct addresses");
+        assertNotEq(
+            hook.i_trustedUniversalRouter(), hook.i_trustedPositionManager(), "the two roles must stay distinct"
+        );
+
+        StandbyHook swappedHook =
+            _deployHookWith(configurationAuthority, trustedPositionManager, trustedUniversalRouter);
+
+        assertEq(swappedHook.i_trustedUniversalRouter(), trustedPositionManager, "roles follow their arguments");
+        assertEq(swappedHook.i_trustedPositionManager(), trustedUniversalRouter, "roles follow their arguments");
+        assertNotEq(address(swappedHook), address(hook), "a different trust basis is a different Hook");
+    }
+
+    /// @notice Proves the trust basis participates in the deployed Hook's identity.
+    /// @dev The trust dependencies are constructor arguments, so they are part of the mined init code.
+    ///      A Hook deployed against a different configuration authority is a different contract at a
+    ///      different address, and cannot be substituted for this one.
+    function test_deployedHook_addressDependsOnTheConfiguredTrustBasis() public {
+        StandbyHook otherAuthorityHook =
+            _deployHookWith(makeAddr("otherConfigurationAuthority"), trustedUniversalRouter, trustedPositionManager);
+
+        assertNotEq(address(otherAuthorityHook), address(hook), "a different authority is a different Hook");
+        assertEq(
+            uint256(uint160(address(otherAuthorityHook)) & Hooks.ALL_HOOK_MASK),
+            uint256(FROZEN_PERMISSION_MASK),
+            "the alternative deployment must still be permission-valid"
+        );
+        assertEq(hook.i_configurationAuthority(), configurationAuthority, "the original binding is unchanged");
     }
 
     /// @notice Records the current F0 implementation state: enabled callbacks are not implemented yet.
@@ -196,8 +275,15 @@ contract StandbyHookDeploymentTest is Test {
 
     /// @notice Proves the deployed address is the deterministic CREATE2 address for the mined salt.
     function test_canonicalDeployment_producesTheDeterministicMinedAddress() public view {
-        bytes memory creationCodeWithArgs =
-            abi.encodePacked(type(StandbyHook).creationCode, abi.encode(IPoolManager(address(poolManager))));
+        bytes memory creationCodeWithArgs = abi.encodePacked(
+            type(StandbyHook).creationCode,
+            abi.encode(
+                IPoolManager(address(poolManager)),
+                configurationAuthority,
+                trustedUniversalRouter,
+                trustedPositionManager
+            )
+        );
 
         address expected = HookMiner.computeAddress(address(deployScript), uint256(hookSalt), creationCodeWithArgs);
 
@@ -214,8 +300,13 @@ contract StandbyHookDeploymentTest is Test {
         assertGt(config.poolManager.code.length, 0, "config must resolve a deployed PoolManager");
 
         DeployStandbyHook configuredDeployScript = new DeployStandbyHook();
-        (StandbyHook configuredHook,) =
-            configuredDeployScript.deployStandbyHook(IPoolManager(config.poolManager), address(configuredDeployScript));
+        (StandbyHook configuredHook,) = configuredDeployScript.deployStandbyHook(
+            IPoolManager(config.poolManager),
+            address(configuredDeployScript),
+            configurationAuthority,
+            trustedUniversalRouter,
+            trustedPositionManager
+        );
 
         assertEq(address(configuredHook.poolManager()), config.poolManager, "hook must bind the resolved PoolManager");
         assertEq(
@@ -247,8 +338,13 @@ contract StandbyHookDeploymentTest is Test {
         PoolManager otherPoolManager = new PoolManager(address(this));
         DeployStandbyHook otherDeployScript = new DeployStandbyHook();
 
-        (StandbyHook otherHook,) =
-            otherDeployScript.deployStandbyHook(IPoolManager(address(otherPoolManager)), address(otherDeployScript));
+        (StandbyHook otherHook,) = otherDeployScript.deployStandbyHook(
+            IPoolManager(address(otherPoolManager)),
+            address(otherDeployScript),
+            configurationAuthority,
+            trustedUniversalRouter,
+            trustedPositionManager
+        );
 
         assertTrue(address(otherHook) != address(hook), "independent deployments must be distinct");
 
@@ -265,6 +361,21 @@ contract StandbyHookDeploymentTest is Test {
     /*//////////////////////////////////////////////////////////////
                          INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @dev Deploys an additional Hook through the canonical procedure with a chosen trust basis.
+    function _deployHookWith(
+        address _configurationAuthority,
+        address _trustedUniversalRouter,
+        address _trustedPositionManager
+    ) internal returns (StandbyHook deployed) {
+        (deployed,) = deployScript.deployStandbyHook(
+            IPoolManager(address(poolManager)),
+            address(deployScript),
+            _configurationAuthority,
+            _trustedUniversalRouter,
+            _trustedPositionManager
+        );
+    }
 
     /// @dev Independent reconstruction of the permission mask from a declared permission struct,
     ///      using the pinned `Hooks` flag constants. It must not read the production mask constant.

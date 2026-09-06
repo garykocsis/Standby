@@ -99,7 +99,13 @@ contract DeterministicEconomicFixtureTest is Test {
         liquidityRouter = new PoolModifyLiquidityTest(poolManager);
 
         hookDeployer = new DeployStandbyHook();
-        (hook,) = hookDeployer.deployStandbyHook(poolManager, address(hookDeployer));
+        (hook,) = hookDeployer.deployStandbyHook(
+            poolManager,
+            address(hookDeployer),
+            makeAddr("configurationAuthority"),
+            makeAddr("trustedUniversalRouter"),
+            makeAddr("trustedPositionManager")
+        );
 
         fixtureDeployer = new DeterministicFixtureDeployer();
         (ustb, usdc, currencySalt) = fixtureDeployer.deployOrderedFixtureCurrencies();

@@ -1,10 +1,10 @@
 # Standby — Project Status
 
-**Last Updated:** September 5, 2026
+**Last Updated:** September 6, 2026
 **Project Phase:** Solidity / Reference Implementation
-**Current Implementation Slice:** F3 — StandbyHook Trust + PES Configuration
-**Last Closed Gate:** G2 — EligibilityRegistry (CLOSED / PASS)
-**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 NOT STARTED
+**Current Implementation Slice:** F4 — Commitment Storage / Bounded Enforcement References
+**Last Closed Gate:** G3 — StandbyHook Trust + PES Configuration (CLOSED / PASS)
+**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 NOT STARTED
 
 ---
 
@@ -41,13 +41,13 @@ Implementation proceeds through the verification-gated F0–F10 ladder defined i
 
 The current slice is:
 
-> **F3 — StandbyHook Trust + PES Configuration**
+> **F4 — Commitment Storage / Bounded Enforcement References**
 
 The last closed gate is:
 
-> **G2 — EligibilityRegistry — CLOSED / PASS**
+> **G3 — StandbyHook Trust + PES Configuration**
 
-F0, F1, and F2 have been implemented, verified, and explicitly gate-closed. F3 is the next authorized implementation slice and has not yet started.
+F0, F1, F2 and F3 have been implemented, verified, and explicitly gate-closed. F4 is the next authorized implementation slice and has not yet started.
 
 ---
 
@@ -60,8 +60,8 @@ Current implementation sequence:
 | F0    | v4 Infrastructure                                 | **COMPLETE — G0 CLOSED**     |
 | F1    | Deterministic Economic Fixture                    | **COMPLETE — G1 CLOSED**     |
 | F2    | EligibilityRegistry                               | **COMPLETE — G2 CLOSED**     |
-| F3    | StandbyHook Trust + PES Configuration             | **NEXT / NOT STARTED**       |
-| F4    | Commitment Storage + Bounded References           | NOT STARTED                  |
+| F3    | StandbyHook Trust + PES Configuration             | **COMPLETE — G3 CLOSED**     |
+| F4    | Commitment Storage + Bounded References           | **NEXT / NOT STARTED**       |
 | F5    | Authoritative Derivation Kernel                   | NOT STARTED                  |
 | F6A   | Preliminary O3 Enforcement with O = 0             | NOT STARTED                  |
 | F7    | O1 Commitment Establishment                       | NOT STARTED                  |
@@ -198,18 +198,15 @@ The tests verify token balance effects showing that the actual swap occurred in 
 
 ### `src/StandbyHook.sol`
 
-The minimum production Standby Uniswap v4 Hook.
+The production Standby Uniswap v4 Hook.
 
-At F0 it carries only infrastructure-level behavior:
+F3 adds H1 — Trust / Configuration:
 
-- immutable PoolManager binding through the pinned `BaseHook` / `ImmutableState`;
-- the required Standby callback-permission surface returned by `getHookPermissions()`.
+- immutable realization-wide trust dependencies;
+- one-shot Protected Execution Service configuration;
+- persistence of the admitted PES semantic basis.
 
-The Hook owns its permission declaration only. The Hook-address mining requirement belongs to the
-deployment procedure, not to the production Hook source.
-
-No Standby economic state or enforcement logic exists yet. The four enabled callbacks fail closed with
-`HookNotImplemented` until their owning implementation slices supply authoritative behavior.
+The four enabled callbacks remain fail-closed until their downstream owning slices implement authoritative behavior.
 
 ### `script/DeployStandbyHook.s.sol`
 
@@ -362,13 +359,13 @@ G2 verified predicate independence, administrator authority, read fidelity, cros
 
 ## 10. Current Blocker
 
-There is no unresolved F0, F1, or F2 implementation responsibility and no open gate.
+There is no unresolved F0, F1,F2 or F3 implementation responsibility and no open gate.
 
 The next unstarted responsibility is:
 
-> **F3 — StandbyHook Trust + PES Configuration.**
+> **F4 — Commitment Storage / Bounded Enforcement References.**
 
-F3 is authorized as the next implementation slice but has not been started.
+F4 is authorized as the next implementation slice but has not been started.
 
 Known limitations carried forward from F0, none of which blocked G0:
 
@@ -570,11 +567,11 @@ The root `CLAUDE.md` will define the repository operating rules and document aut
 
 ## 18. Next Action
 
-G2 has been reviewed and closed, so the next action is:
+G3 has been reviewed and closed, so the next action is:
 
-> **F3 — StandbyHook Trust + PES Configuration.**
+> **F4 — Commitment Storage / Bounded Enforcement References.**
 
-F3 may begin when explicitly tasked. Its own verification gates govern advancement beyond the F3 boundary.
+F4 may begin when explicitly tasked. Its own verification gates govern advancement beyond the F4 boundary.
 
 ---
 
@@ -582,31 +579,21 @@ F3 may begin when explicitly tasked. Its own verification gates govern advanceme
 
 **Validated State**
 
-- Standby implementation phase has begun.
 - F0 is complete and G0 is closed.
-- F1 deterministic economic fixture is complete and G1 is closed.
-- F2 EligibilityRegistry is complete and G2 is closed.
-- Toolchain/dependency baseline is validated.
-- Real vanilla v4 pool initialization works.
-- Real vanilla v4 liquidity addition works.
-- Real vanilla v4 swaps work.
-- Both swap directions have passing infrastructure evidence.
-- Generic F0 infrastructure remains direction-neutral.
-- The minimum production `StandbyHook` exists and deploys through the canonical deterministic path.
-- The deployed Hook address encodes exactly `0x0AC0` and is immutably bound to the intended PoolManager.
-- Hook deployment is fixture-agnostic.
-- The deterministic economic fixture is established without production hard-coding to fixture identities or values.
-- The external EligibilityRegistry exists with independent Beneficiary, Trader, and Liquidity-action predicates.
-- No F3+ Hook consumption of eligibility, PES configuration, commitment, capacity derivation, or economic enforcement has been introduced.
+- F1 is complete and G1 is closed.
+- F2 is complete and G2 is closed.
+- F3 StandbyHook Trust + PES Configuration is complete and G3 is closed.
+- The Hook now has its validated trust/configuration basis and one-shot PES activation.
+- No F4+ commitment storage, capacity derivation, O3, O1, or O2 behavior has been introduced.
 
 **Current Gate**
 
-- G2 — CLOSED / PASS. No gate is currently open.
+- G3 — CLOSED / PASS. No gate is currently open.
 
 **Next Blocker**
 
-- F3 — StandbyHook Trust + PES Configuration has not been started.
+- F4 — Commitment Storage / Bounded Enforcement References has not been started.
 
 **Immediate Next Step**
 
-- Begin F3 — StandbyHook Trust + PES Configuration when explicitly tasked.
+- Begin F4 when explicitly tasked.
