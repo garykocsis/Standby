@@ -2,9 +2,9 @@
 
 **Last Updated:** September 6, 2026
 **Project Phase:** Solidity / Reference Implementation
-**Current Implementation Slice:** F4 — Commitment Storage / Bounded Enforcement References
-**Last Closed Gate:** G3 — StandbyHook Trust + PES Configuration (CLOSED / PASS)
-**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 NOT STARTED
+**Current Implementation Slice:** F5 — Authoritative Derivation Kernel
+**Last Closed Gate:** G4 — Persistence / Bounded Reference Gate (CLOSED / PASS)
+**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 NOT STARTED
 
 ---
 
@@ -41,13 +41,13 @@ Implementation proceeds through the verification-gated F0–F10 ladder defined i
 
 The current slice is:
 
-> **F4 — Commitment Storage / Bounded Enforcement References**
+> **F5 — Authoritative Derivation Kernel**
 
 The last closed gate is:
 
-> **G3 — StandbyHook Trust + PES Configuration**
+> **G4 — Persistence / Bounded Reference Gate**
 
-F0, F1, F2 and F3 have been implemented, verified, and explicitly gate-closed. F4 is the next authorized implementation slice and has not yet started.
+F0, F1, F2, F3 and F4 have been implemented, verified, and explicitly gate-closed. F5 is the next authorized implementation slice and has not yet started.
 
 ---
 
@@ -61,8 +61,8 @@ Current implementation sequence:
 | F1    | Deterministic Economic Fixture                    | **COMPLETE — G1 CLOSED**     |
 | F2    | EligibilityRegistry                               | **COMPLETE — G2 CLOSED**     |
 | F3    | StandbyHook Trust + PES Configuration             | **COMPLETE — G3 CLOSED**     |
-| F4    | Commitment Storage + Bounded References           | **NEXT / NOT STARTED**       |
-| F5    | Authoritative Derivation Kernel                   | NOT STARTED                  |
+| F4    | Commitment Storage + Bounded References           | **COMPLETE — G4 CLOSED**     |
+| F5    | Authoritative Derivation Kernel                   | **NEXT / NOT STARTED**       |
 | F6A   | Preliminary O3 Enforcement with O = 0             | NOT STARTED                  |
 | F7    | O1 Commitment Establishment                       | NOT STARTED                  |
 | F6B   | O3 Enforcement with Authentic O > 0               | NOT STARTED                  |
@@ -359,13 +359,13 @@ G2 verified predicate independence, administrator authority, read fidelity, cros
 
 ## 10. Current Blocker
 
-There is no unresolved F0, F1,F2 or F3 implementation responsibility and no open gate.
+There is no unresolved F0, F1, F2, F3 or F4 implementation responsibility and no open gate.
 
 The next unstarted responsibility is:
 
-> **F4 — Commitment Storage / Bounded Enforcement References.**
+> **F5 — Authoritative Derivation Kernel.**
 
-F4 is authorized as the next implementation slice but has not been started.
+F5 is authorized as the next implementation slice but has not been started.
 
 Known limitations carried forward from F0, none of which blocked G0:
 
@@ -567,11 +567,11 @@ The root `CLAUDE.md` will define the repository operating rules and document aut
 
 ## 18. Next Action
 
-G3 has been reviewed and closed, so the next action is:
+G4 has been reviewed and closed, so the next action is:
 
-> **F4 — Commitment Storage / Bounded Enforcement References.**
+> **F5 — Authoritative Derivation Kernel.**
 
-F4 may begin when explicitly tasked. Its own verification gates govern advancement beyond the F4 boundary.
+F5 may begin when explicitly tasked. Its own verification gates govern advancement beyond the F5 boundary.
 
 ---
 
@@ -584,16 +584,17 @@ F4 may begin when explicitly tasked. Its own verification gates govern advanceme
 - F2 is complete and G2 is closed.
 - F3 StandbyHook Trust + PES Configuration is complete and G3 is closed.
 - The Hook now has its validated trust/configuration basis and one-shot PES activation.
-- No F4+ commitment storage, capacity derivation, O3, O1, or O2 behavior has been introduced.
+- F4 Commitment Storage + Bounded Enforcement References is complete and G4 is closed.
+- No F5+ capacity derivation, O3, O1, or O2 behavior has been introduced.
 
 **Current Gate**
 
-- G3 — CLOSED / PASS. No gate is currently open.
+- G4 — CLOSED / PASS. No gate is currently open.
 
 **Next Blocker**
 
-- F4 — Commitment Storage / Bounded Enforcement References has not been started.
+- F5 — Authoritative Derivation Kernel has not been started.
 
 **Immediate Next Step**
 
-- Begin F4 when explicitly tasked.
+- Begin F5 when explicitly tasked.
