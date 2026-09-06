@@ -16,6 +16,7 @@ import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 
 import {IEligibilityRegistry} from "./interfaces/IEligibilityRegistry.sol";
+import {CommitmentRefs, MAX_LIVE_COMMITMENTS as BOUNDED_REFERENCE_SLOTS} from "./libraries/CommitmentRefs.sol";
 
 /*//////////////////////////////////////////////////////////////
                              CONTRACTS
@@ -23,10 +24,12 @@ import {IEligibilityRegistry} from "./interfaces/IEligibilityRegistry.sol";
 
 /// @title StandbyHook
 /// @notice The Standby Uniswap v4 Hook.
-/// @dev At implementation slice F3 this contract owns the Hook-wide immutable trust basis and one
-///      one-shot Protected Execution Service configuration. It does not yet own commitment state,
-///      economic derivation, or O3 enforcement, so the four enabled callbacks still fail closed with
-///      `HookNotImplemented` until their owning implementation slices supply authoritative behavior.
+/// @dev At implementation slice F4 this contract owns the Hook-wide immutable trust basis, one one-shot
+///      Protected Execution Service configuration, and the authoritative commitment record store with its
+///      bounded enforcement-reference index. It does not yet own economic derivation, commitment
+///      admission, exercise, or O3 enforcement, so the four enabled callbacks still fail closed with
+///      `HookNotImplemented` until their owning implementation slices supply authoritative behavior, and
+///      no production path can create a commitment.
 ///
 ///      Trust is separated by ownership scope, following `uniswap-v4-realization.md` RR-STATE-2 and
 ///      RR-STATE-3:
@@ -42,6 +45,7 @@ import {IEligibilityRegistry} from "./interfaces/IEligibilityRegistry.sol";
 ///      meanings, exactly as the EligibilityRegistry keeps its three predicates distinct under one
 ///      administrator.
 contract StandbyHook is BaseHook {
+    using CommitmentRefs for uint256[BOUNDED_REFERENCE_SLOTS];
     using LPFeeLibrary for uint24;
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
@@ -80,9 +84,53 @@ contract StandbyHook is BaseHook {
         address establishmentAuthority;
     }
 
+    /// @notice The complete authoritative fact record of one historical commitment.
+    /// @dev These are the frozen commitment facts of `uniswap-v4-realization.md` §10.1 and nothing else.
+    ///      Every economically meaningful property of a commitment — validity, exercisability, binding
+    ///      status, fulfillment, expiry, reclaimability, its Capacity Obligation — is deterministically
+    ///      derivable from these facts plus the admitted service semantics, so none of them is persisted
+    ///      here. Persisting a classification alongside the facts it comes from would create a
+    ///      synchronization invariant with no authoritative owner.
+    ///
+    ///      Immutable Protected Execution Service semantics are referenced, not copied (RR-O1-2, RR-O1-3):
+    ///      `serviceId` is the whole admitted semantic basis, because the service that identity resolves
+    ///      to is itself one-shot and unreplaceable. Direction, boundaries, denomination, registry, and
+    ///      ExerciseRouter are therefore never snapshotted per commitment.
+    ///
+    ///      Field order is chosen for storage packing rather than presentation: the record occupies four
+    ///      slots instead of five, which matters because bounded enforcement scans read up to
+    ///      `MAX_LIVE_COMMITMENTS` records in a single ordinary pool transaction. The semantic content is
+    ///      exactly the frozen set.
+    /// @param serviceId The Protected Execution Service under which the commitment was admitted.
+    /// @param beneficiary The account for whose benefit qualifying execution must be delivered.
+    /// @param exercisableFrom The admitted timestamp from which exercise may become possible.
+    /// @param exerciseAuthority The account authorized to exercise the commitment.
+    /// @param validUntil The admitted timestamp at which the entitlement stops being valid.
+    /// @param originalEntitlement The admitted entitlement extent, never rewritten to represent later
+    ///        fulfillment, non-exercisability, backing pressure, or release.
+    /// @param remainingEntitlement The portion of the admitted extent not yet discharged by attributable
+    ///        fulfillment. Authoritative persistent state, not a derived classification.
+    struct Commitment {
+        PoolId serviceId;
+        address beneficiary;
+        uint64 exercisableFrom;
+        address exerciseAuthority;
+        uint64 validUntil;
+        uint128 originalEntitlement;
+        uint128 remainingEntitlement;
+    }
+
     /*//////////////////////////////////////////////////////////////
                            STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice The size of the bounded enforcement-reference index.
+    /// @dev Republished from the single definition in `CommitmentRefs.sol`, which is imported under an
+    ///      alias so that one value can carry the frozen name here without shadowing itself. This bounds
+    ///      the candidate universe a later enforcement scan must inspect. It is not a limit on how many
+    ///      commitments a service may have over its lifetime: historical records are permanent and
+    ///      unbounded, and slots are reused.
+    uint256 public constant MAX_LIVE_COMMITMENTS = BOUNDED_REFERENCE_SLOTS;
 
     /// @notice The only account authorized to configure and activate the Protected Execution Service.
     /// @dev Semantically distinct from commitment-establishment authority, exercise authority,
@@ -102,6 +150,32 @@ contract StandbyHook is BaseHook {
     /// @dev The authoritative Protected Execution Service. Written exactly once, by a successful
     ///      `configureAndActivate`, and never mutated afterwards.
     ProtectedExecutionService private _service;
+
+    /// @dev The identity the next recorded commitment will receive. Starts at 1, so `0` is permanently
+    ///      reserved as the nonexistent-commitment sentinel, and only ever increases across successful
+    ///      commitment recordings. A successfully persisted allocation permanently consumes its identity;
+    ///      if the surrounding transactions reverts, the allocation and counter increment revert atomically,
+    ///      so no authoritative identity is consumed.
+    ///
+    ///      This counter is also the authoritative existence predicate: an identity has been allocated if
+    ///      and only if it lies in `[1, _nextCommitmentId)`. Existence therefore never depends on the
+    ///      field values of a record, which means a commitment whose facts happen to be zero-valued is
+    ///      still unambiguously an existing commitment.
+    uint256 private _nextCommitmentId;
+
+    /// @dev Permanent commitment history. Records are never deleted and never rewritten except through
+    ///      the authoritative Remaining Entitlement transition, so a historical record stays readable for
+    ///      as long as the Hook exists, regardless of what the bounded reference index does later.
+    mapping(uint256 commitmentId => Commitment commitment) private _commitments;
+
+    /// @dev The bounded enforcement-reference index: `0` is an empty slot, a nonzero entry is a
+    ///      commitment identity that later derivation may need to inspect.
+    ///
+    ///      Membership is bookkeeping, not economics. It asserts nothing about validity, exercisability,
+    ///      eligibility, fulfillment, expiry, or whether the referenced commitment carries any Capacity
+    ///      Obligation at all; a referenced commitment may be entirely terminal and merely awaiting
+    ///      reclamation of its slot. Nothing may read membership as an economic classification.
+    uint256[BOUNDED_REFERENCE_SLOTS] private _enforcementRefs;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -195,6 +269,19 @@ contract StandbyHook is BaseHook {
     /// @notice Thrown when the Hook has no trusted liquidity perimeter to establish a service against.
     error StandbyHook__InvalidTrustedPositionManager();
 
+    /// @notice Thrown when an identity that was never allocated is read or referenced.
+    /// @param commitmentId The unallocated identity, including the reserved sentinel `0`.
+    error StandbyHook__CommitmentDoesNotExist(uint256 commitmentId);
+
+    /// @notice Thrown when an enforcement-reference slot outside the bounded index is addressed.
+    /// @param slot The out-of-range slot.
+    error StandbyHook__InvalidEnforcementReferenceSlot(uint256 slot);
+
+    /// @notice Thrown when a commitment already referenced by the bounded index would be referenced twice.
+    /// @param commitmentId The already-referenced identity.
+    /// @param slot The slot that already holds it.
+    error StandbyHook__DuplicateEnforcementReference(uint256 commitmentId, uint256 slot);
+
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -207,6 +294,9 @@ contract StandbyHook is BaseHook {
     ///      frozen realization sequence places that check, rather than here. A Hook deployed without a
     ///      complete trust basis is inert: it can never host a Protected Execution Service, so it can
     ///      never reach any Standby economic transition.
+    ///
+    ///      Commitment identity starts at 1, so `0` is permanently reserved as the nonexistent-commitment
+    ///      sentinel and no allocated identity can ever collide with it.
     /// @param _poolManager The PoolManager whose callbacks this Hook answers.
     /// @param _configurationAuthority The only account authorized to activate the service.
     /// @param _trustedUniversalRouter The trusted ordinary-swap perimeter.
@@ -220,6 +310,8 @@ contract StandbyHook is BaseHook {
         i_configurationAuthority = _configurationAuthority;
         i_trustedUniversalRouter = _trustedUniversalRouter;
         i_trustedPositionManager = _trustedPositionManager;
+
+        _nextCommitmentId = 1;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -329,6 +421,42 @@ contract StandbyHook is BaseHook {
         poolId = key.toId();
     }
 
+    /// @notice Returns the complete authoritative fact record of a historical commitment.
+    /// @dev A fact-only read. It reports what was recorded and never what it means: no validity,
+    ///      exercisability, binding status, obligation, or reclaimability is computed or implied here.
+    ///
+    ///      An identity that was never allocated reverts rather than returning a zero-valued record, so a
+    ///      caller can never mistake the absence of a commitment for the presence of an empty one.
+    /// @param _commitmentId The identity to read.
+    /// @return commitmentRecord The persisted commitment facts.
+    function commitment(uint256 _commitmentId) external view returns (Commitment memory commitmentRecord) {
+        if (!_commitmentExists(_commitmentId)) revert StandbyHook__CommitmentDoesNotExist(_commitmentId);
+
+        commitmentRecord = _commitments[_commitmentId];
+    }
+
+    /// @notice Returns the identity the next recorded commitment will receive.
+    /// @dev The authoritative allocation fact. Because identities are allocated strictly in sequence from
+    ///      1 and are never recycled, this also delimits the allocated history: every identity in
+    ///      `[1, nextCommitmentId)` exists and every other identity does not.
+    /// @return nextId The next identity to be allocated.
+    function nextCommitmentId() external view returns (uint256 nextId) {
+        nextId = _nextCommitmentId;
+    }
+
+    /// @notice Returns the whole bounded enforcement-reference index.
+    /// @dev A fact-only read of an index, not of an economic ledger. Each entry is either `0`, meaning the
+    ///      slot is empty, or a commitment identity that later derivation may need to inspect. A nonzero
+    ///      entry is not evidence that the referenced commitment is valid, exercisable, eligible,
+    ///      unfulfilled, or currently obligation-bearing.
+    ///
+    ///      The whole index is returned in one call because it is bounded by construction, and because
+    ///      the meaning of a slot is only well defined relative to the complete set.
+    /// @return references The bounded enforcement-reference index, slot by slot.
+    function enforcementReferences() external view returns (uint256[BOUNDED_REFERENCE_SLOTS] memory references) {
+        references = _enforcementRefs;
+    }
+
     /*//////////////////////////////////////////////////////////////
                           PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -359,6 +487,77 @@ contract StandbyHook is BaseHook {
     /*//////////////////////////////////////////////////////////////
                          INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @dev Allocates a permanent identity and writes the commitment facts under it.
+    ///
+    ///      This is storage mechanics, not admission. It authenticates nobody, validates no economic
+    ///      term, and derives nothing: it records exactly the facts it is handed. Whether those facts
+    ///      describe an authentic, sufficiently backed Standby commitment is the admission slice's
+    ///      question, and no production path reaches this function until that slice exists.
+    ///
+    ///      The identity is consumed before the record is written and the counter only increases, so a
+    ///      reverted surrounding transaction releases the identity with the rest of the state and a
+    ///      committed one retires it forever. Either way an identity is never reused.
+    /// @param _commitment The complete commitment facts to record.
+    /// @return commitmentId The permanent identity allocated to the record.
+    function _recordCommitment(Commitment memory _commitment) internal returns (uint256 commitmentId) {
+        commitmentId = _nextCommitmentId;
+
+        _nextCommitmentId = commitmentId + 1;
+
+        _commitments[commitmentId] = _commitment;
+    }
+
+    /// @dev Writes the Remaining Entitlement of an existing commitment, leaving every other fact intact.
+    ///
+    ///      Remaining Entitlement is the one mutable commitment fact, and this is the only mechanism that
+    ///      changes it. The mechanism applies no economic rule — it does not decide what the new value
+    ///      should be, does not require it to decrease, and does not bound it by the admitted extent. The
+    ///      authoritative reduction and its causal justification belong to the fulfillment slice.
+    ///
+    ///      Expiry and eligibility deliberately have no path to this function. A commitment that has
+    ///      passed `validUntil`, or whose Beneficiary has lost eligibility, keeps the Remaining
+    ///      Entitlement it had: those conditions change what the facts mean, never the facts themselves.
+    /// @param _commitmentId The identity whose Remaining Entitlement is written.
+    /// @param _remainingEntitlement The Remaining Entitlement after this write.
+    function _writeRemainingEntitlement(uint256 _commitmentId, uint128 _remainingEntitlement) internal {
+        if (!_commitmentExists(_commitmentId)) revert StandbyHook__CommitmentDoesNotExist(_commitmentId);
+
+        _commitments[_commitmentId].remainingEntitlement = _remainingEntitlement;
+    }
+
+    /// @dev Writes a commitment identity into one slot of the bounded enforcement-reference index.
+    ///
+    ///      The write is the single authoritative way the index changes, and it enforces exactly the two
+    ///      structural properties the index must have: every nonzero reference resolves to an existing
+    ///      historical commitment, and no identity appears in two slots. Both are structural, not
+    ///      economic. Whether a slot may be taken over from the commitment currently occupying it is an
+    ///      economic judgement, and it is not made here.
+    ///
+    ///      Writing an occupied slot replaces the reference. It does not touch the replaced commitment's
+    ///      historical record, which remains readable and unchanged for the life of the Hook (RR-O1-7).
+    /// @param _slot The slot to write, within the bounded index.
+    /// @param _commitmentId The existing commitment identity to reference.
+    function _writeEnforcementReference(uint256 _slot, uint256 _commitmentId) internal {
+        if (_slot >= MAX_LIVE_COMMITMENTS) revert StandbyHook__InvalidEnforcementReferenceSlot(_slot);
+        if (!_commitmentExists(_commitmentId)) revert StandbyHook__CommitmentDoesNotExist(_commitmentId);
+
+        (bool alreadyReferenced, uint256 occupiedSlot) = _enforcementRefs.slotOf(_commitmentId);
+
+        if (alreadyReferenced && occupiedSlot != _slot) {
+            revert StandbyHook__DuplicateEnforcementReference(_commitmentId, occupiedSlot);
+        }
+
+        _enforcementRefs[_slot] = _commitmentId;
+    }
+
+    /// @dev Reports whether an identity has been allocated.
+    ///
+    ///      Judged from the allocation counter rather than from record contents, so existence is a fact
+    ///      about identity alone. The reserved sentinel `0` never exists.
+    function _commitmentExists(uint256 _commitmentId) internal view returns (bool exists) {
+        exists = _commitmentId != 0 && _commitmentId < _nextCommitmentId;
+    }
 
     /// @dev Validates the proposed service geometry against the authoritative pool environment.
     ///

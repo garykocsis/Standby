@@ -4,7 +4,7 @@
 **Project Phase:** Solidity / Reference Implementation
 **Current Implementation Slice:** F4 — Commitment Storage / Bounded Enforcement References
 **Last Closed Gate:** G3 — StandbyHook Trust + PES Configuration (CLOSED / PASS)
-**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 NOT STARTED
+**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 IMPLEMENTED / G4 OPEN
 
 ---
 
@@ -47,7 +47,7 @@ The last closed gate is:
 
 > **G3 — StandbyHook Trust + PES Configuration**
 
-F0, F1, F2 and F3 have been implemented, verified, and explicitly gate-closed. F4 is the next authorized implementation slice and has not yet started.
+F0, F1, F2 and F3 have been implemented, verified, and explicitly gate-closed. F4 is the currently authorized implementation slice. It has been implemented and its G4 evidence has been produced, but G4 has not been reviewed or closed.
 
 ---
 
@@ -61,7 +61,7 @@ Current implementation sequence:
 | F1    | Deterministic Economic Fixture                    | **COMPLETE — G1 CLOSED**     |
 | F2    | EligibilityRegistry                               | **COMPLETE — G2 CLOSED**     |
 | F3    | StandbyHook Trust + PES Configuration             | **COMPLETE — G3 CLOSED**     |
-| F4    | Commitment Storage + Bounded References           | **NEXT / NOT STARTED**       |
+| F4    | Commitment Storage + Bounded References           | **IMPLEMENTED — G4 OPEN**    |
 | F5    | Authoritative Derivation Kernel                   | NOT STARTED                  |
 | F6A   | Preliminary O3 Enforcement with O = 0             | NOT STARTED                  |
 | F7    | O1 Commitment Establishment                       | NOT STARTED                  |
@@ -359,13 +359,14 @@ G2 verified predicate independence, administrator authority, read fidelity, cros
 
 ## 10. Current Blocker
 
-There is no unresolved F0, F1,F2 or F3 implementation responsibility and no open gate.
+There is no unresolved F0, F1, F2 or F3 implementation responsibility.
 
-The next unstarted responsibility is:
+The current open gate is:
 
-> **F4 — Commitment Storage / Bounded Enforcement References.**
+> **G4 — Commitment Storage / Bounded Enforcement References.**
 
-F4 is authorized as the next implementation slice but has not been started.
+F4 is implemented and its G4 evidence has been produced. G4 has not been reviewed or closed, so no
+downstream slice is authorized.
 
 Known limitations carried forward from F0, none of which blocked G0:
 
@@ -567,11 +568,11 @@ The root `CLAUDE.md` will define the repository operating rules and document aut
 
 ## 18. Next Action
 
-G3 has been reviewed and closed, so the next action is:
+F4 has been implemented, so the next action is:
 
-> **F4 — Commitment Storage / Bounded Enforcement References.**
+> **G4 review.**
 
-F4 may begin when explicitly tasked. Its own verification gates govern advancement beyond the F4 boundary.
+F5 may begin only after G4 is explicitly closed.
 
 ---
 
@@ -584,16 +585,17 @@ F4 may begin when explicitly tasked. Its own verification gates govern advanceme
 - F2 is complete and G2 is closed.
 - F3 StandbyHook Trust + PES Configuration is complete and G3 is closed.
 - The Hook now has its validated trust/configuration basis and one-shot PES activation.
-- No F4+ commitment storage, capacity derivation, O3, O1, or O2 behavior has been introduced.
+- F4 Commitment Storage + Bounded Enforcement References is implemented and awaiting G4 review.
+- No F5+ capacity derivation, O3, O1, or O2 behavior has been introduced.
 
 **Current Gate**
 
-- G3 — CLOSED / PASS. No gate is currently open.
+- G4 — OPEN. Implementation and evidence are complete; the gate is not closed.
 
 **Next Blocker**
 
-- F4 — Commitment Storage / Bounded Enforcement References has not been started.
+- G4 review.
 
 **Immediate Next Step**
 
-- Begin F4 when explicitly tasked.
+- Submit F4 for G4 review. Begin F5 only if G4 is explicitly closed.
