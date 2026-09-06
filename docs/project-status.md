@@ -2,9 +2,9 @@
 
 **Last Updated:** September 5, 2026
 **Project Phase:** Solidity / Reference Implementation
-**Current Implementation Slice:** F1 — Deterministic Economic Fixture
-**Last Closed Gate:** G0 — Vanilla v4 Infrastructure (CLOSED / PASS)
-**Status:** F0 COMPLETE — F1 NOT STARTED
+**Current Implementation Slice:** F3 — StandbyHook Trust + PES Configuration
+**Last Closed Gate:** G2 — EligibilityRegistry (CLOSED / PASS)
+**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 NOT STARTED
 
 ---
 
@@ -41,13 +41,13 @@ Implementation proceeds through the verification-gated F0–F10 ladder defined i
 
 The current slice is:
 
-> **F1 — Deterministic Economic Fixture**
+> **F3 — StandbyHook Trust + PES Configuration**
 
 The last closed gate is:
 
-> **G0 — Vanilla v4 Infrastructure — CLOSED / PASS**
+> **G2 — EligibilityRegistry — CLOSED / PASS**
 
-The required upstream infrastructure foundation has been established and verified, so F1 is now the next authorized implementation slice.
+F0, F1, and F2 have been implemented, verified, and explicitly gate-closed. F3 is the next authorized implementation slice and has not yet started.
 
 ---
 
@@ -58,9 +58,9 @@ Current implementation sequence:
 | Slice | Responsibility                                    | Status                       |
 | ----- | ------------------------------------------------- | ---------------------------- |
 | F0    | v4 Infrastructure                                 | **COMPLETE — G0 CLOSED**     |
-| F1    | Deterministic Economic Fixture                    | **NEXT / NOT STARTED**       |
-| F2    | EligibilityRegistry                               | NOT STARTED                  |
-| F3    | StandbyHook Trust + PES Configuration             | NOT STARTED                  |
+| F1    | Deterministic Economic Fixture                    | **COMPLETE — G1 CLOSED**     |
+| F2    | EligibilityRegistry                               | **COMPLETE — G2 CLOSED**     |
+| F3    | StandbyHook Trust + PES Configuration             | **NEXT / NOT STARTED**       |
 | F4    | Commitment Storage + Bounded References           | NOT STARTED                  |
 | F5    | Authoritative Derivation Kernel                   | NOT STARTED                  |
 | F6A   | Preliminary O3 Enforcement with O = 0             | NOT STARTED                  |
@@ -340,15 +340,35 @@ F1 may now depend on the F0 infrastructure and the canonical StandbyHook deploym
 
 ---
 
+## 9A. F1 and F2 Gate Status
+
+### F1 — Deterministic Economic Fixture
+
+**Status: CLOSED / PASS (G1)**
+
+F1 established the deterministic MockUSTB / MockUSDC fixture, canonical currency ordering and protected direction, the Hook-bound canonical pool at zero pre-activation liquidity, and a separate real-v4 geometry pool used to verify the canonical liquidity geometry and independent initial Supporting Capacity reference.
+
+The accepted F1 sequencing interpretation is that F1 establishes canonical economic geometry, not yet an activated Standby service. Hook-bound liquidity admission remains downstream of configuration and enforcement.
+
+### F2 — EligibilityRegistry
+
+**Status: CLOSED / PASS (G2)**
+
+F2 established the dedicated external eligibility authority with three independently mutable, fail-closed predicates: Beneficiary eligibility, Trader eligibility, and Liquidity-action eligibility. The registry owns no Standby economic state, and `StandbyHook` does not yet consume or enforce registry results.
+
+G2 verified predicate independence, administrator authority, read fidelity, cross-domain isolation, and architectural isolation through unit and fuzz evidence.
+
+---
+
 ## 10. Current Blocker
 
-There is no unresolved F0 implementation responsibility and no open gate.
+There is no unresolved F0, F1, or F2 implementation responsibility and no open gate.
 
 The next unstarted responsibility is:
 
-> **F1 — Deterministic Economic Fixture.**
+> **F3 — StandbyHook Trust + PES Configuration.**
 
-F1 is authorized but has not been started. It must not be implemented until it is explicitly tasked.
+F3 is authorized as the next implementation slice but has not been started.
 
 Known limitations carried forward from F0, none of which blocked G0:
 
@@ -415,7 +435,7 @@ The canonical Standby economic fixture belongs to:
 
 > **F1 — Deterministic Economic Fixture**
 
-It is not part of the completed F0 infrastructure implementation. F1 is the next authorized slice, but it has not been started.
+It is not part of the completed F0 infrastructure implementation. F1 has now been implemented and G1 explicitly closed.
 
 The frozen fixture will later use:
 
@@ -550,13 +570,11 @@ The root `CLAUDE.md` will define the repository operating rules and document aut
 
 ## 18. Next Action
 
-G0 has been reviewed and closed, so the next action is:
+G2 has been reviewed and closed, so the next action is:
 
-> **F1 — Deterministic Economic Fixture.**
+> **F3 — StandbyHook Trust + PES Configuration.**
 
-Claude Code must not begin F1 until it is explicitly tasked, and must not implement any Standby
-economic derivation, commitment, eligibility, or enforcement behavior as part of it. F1 establishes the
-deterministic economic fixture only; its own gate governs advancement beyond it.
+F3 may begin when explicitly tasked. Its own verification gates govern advancement beyond the F3 boundary.
 
 ---
 
@@ -566,6 +584,8 @@ deterministic economic fixture only; its own gate governs advancement beyond it.
 
 - Standby implementation phase has begun.
 - F0 is complete and G0 is closed.
+- F1 deterministic economic fixture is complete and G1 is closed.
+- F2 EligibilityRegistry is complete and G2 is closed.
 - Toolchain/dependency baseline is validated.
 - Real vanilla v4 pool initialization works.
 - Real vanilla v4 liquidity addition works.
@@ -575,16 +595,18 @@ deterministic economic fixture only; its own gate governs advancement beyond it.
 - The minimum production `StandbyHook` exists and deploys through the canonical deterministic path.
 - The deployed Hook address encodes exactly `0x0AC0` and is immutably bound to the intended PoolManager.
 - Hook deployment is fixture-agnostic.
-- No Standby economic behavior has been introduced.
+- The deterministic economic fixture is established without production hard-coding to fixture identities or values.
+- The external EligibilityRegistry exists with independent Beneficiary, Trader, and Liquidity-action predicates.
+- No F3+ Hook consumption of eligibility, PES configuration, commitment, capacity derivation, or economic enforcement has been introduced.
 
 **Current Gate**
 
-- G0 — CLOSED / PASS. No gate is currently open.
+- G2 — CLOSED / PASS. No gate is currently open.
 
 **Next Blocker**
 
-- F1 — Deterministic Economic Fixture has not been started.
+- F3 — StandbyHook Trust + PES Configuration has not been started.
 
 **Immediate Next Step**
 
-- Begin F1 — Deterministic Economic Fixture when explicitly tasked.
+- Begin F3 — StandbyHook Trust + PES Configuration when explicitly tasked.
