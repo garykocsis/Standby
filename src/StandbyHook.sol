@@ -39,14 +39,17 @@ import {StandbyMath} from "./libraries/StandbyMath.sol";
 
 /// @title StandbyHook
 /// @notice The Standby Uniswap v4 Hook.
-/// @dev At implementation slice F6A this contract owns the Hook-wide immutable trust basis, one one-shot
+/// @dev At implementation slice F7 this contract owns the Hook-wide immutable trust basis, one one-shot
 ///      Protected Execution Service configuration, the authoritative commitment record store with its
 ///      bounded enforcement-reference index, the composition of the authoritative economic derivation
-///      kernel, and the admission or rejection of ordinary O3 backing-affecting pool transitions. It does
-///      not yet own commitment admission or exercise, so no production path can create a commitment and
-///      Aggregate Capacity Obligation therefore derives to zero in every currently reachable state. That
-///      is a consequence of what has been built, never an assumption: enforcement obtains the obligation
-///      from the same derivation that will report a positive one once admission exists.
+///      kernel, the admission or rejection of ordinary O3 backing-affecting pool transitions, and the O1
+///      admission that turns a proposed commitment into an authoritative binding one. Exercise does not
+///      exist yet, so no production path reduces Remaining Entitlement and no fulfillment can occur.
+///
+///      O1 admission is where Aggregate Capacity Obligation first becomes positive. Enforcement was never
+///      told that: it obtains the obligation from the same derivation that reported zero while no
+///      commitment could exist, so a positive obligation changes what that derivation returns and nothing
+///      about how enforcement reads it.
 ///
 ///      The derivation kernel is composition, not a second economics. The Hook is where authoritative
 ///      inputs meet economic consequence: it reads PoolManager state, the immutable service basis, the
@@ -273,6 +276,29 @@ contract StandbyHook is BaseHook {
         address establishmentAuthority
     );
 
+    /// @notice Emitted when a successful O1 admission establishes an authoritative commitment.
+    /// @dev Observational evidence of an admission that has already become authoritative. Every fact it
+    ///      carries is readable from the commitment record and the bounded index afterwards, so nothing
+    ///      later enforces against this event.
+    /// @param commitmentId The permanent identity allocated to the admitted commitment.
+    /// @param serviceId The Protected Execution Service the commitment was admitted under.
+    /// @param beneficiary The account for whose benefit qualifying execution must be delivered.
+    /// @param exerciseAuthority The account authorized to exercise the commitment.
+    /// @param originalEntitlement The admitted entitlement extent.
+    /// @param exercisableFrom The admitted timestamp from which exercise may become possible.
+    /// @param validUntil The admitted timestamp at which the entitlement stops being valid.
+    /// @param enforcementReferenceSlot The bounded index slot that now references the commitment.
+    event CommitmentEstablished(
+        uint256 indexed commitmentId,
+        PoolId indexed serviceId,
+        address indexed beneficiary,
+        address exerciseAuthority,
+        uint128 originalEntitlement,
+        uint64 exercisableFrom,
+        uint64 validUntil,
+        uint256 enforcementReferenceSlot
+    );
+
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -353,6 +379,52 @@ contract StandbyHook is BaseHook {
     /// @param commitmentId The already-referenced identity.
     /// @param slot The slot that already holds it.
     error StandbyHook__DuplicateEnforcementReference(uint256 commitmentId, uint256 slot);
+
+    /// @notice Thrown when an account other than the commitment-establishment authority attempts O1.
+    /// @dev Distinct from `StandbyHook__InvalidEstablishmentAuthority`, which reports that an activation
+    ///      attempt named no establishment authority at all.
+    /// @param caller The unauthorized caller.
+    error StandbyHook__NotEstablishmentAuthority(address caller);
+
+    /// @notice Thrown when a proposed commitment names no Beneficiary.
+    error StandbyHook__InvalidBeneficiary();
+
+    /// @notice Thrown when a proposed commitment names no exercise authority.
+    error StandbyHook__InvalidExerciseAuthority();
+
+    /// @notice Thrown when a proposed commitment carries no entitlement extent.
+    error StandbyHook__InvalidOriginalEntitlement();
+
+    /// @notice Thrown when a proposed commitment's exercise window could never open before validity ends.
+    /// @param exercisableFrom The proposed timestamp from which exercise may become possible.
+    /// @param validUntil The proposed timestamp at which the entitlement stops being valid.
+    error StandbyHook__InvalidCommitmentWindow(uint64 exercisableFrom, uint64 validUntil);
+
+    /// @notice Thrown when a proposed commitment would be admitted already outside its validity window.
+    /// @dev Half-open validity: `validUntil` equal to the current time is already invalid, so admitting it
+    ///      would create a commitment that is binding on nothing from the moment it exists.
+    /// @param validUntil The proposed timestamp at which the entitlement stops being valid.
+    /// @param timestamp The authoritative current time.
+    error StandbyHook__CommitmentAlreadyInvalid(uint64 validUntil, uint256 timestamp);
+
+    /// @notice Thrown when the proposed Beneficiary is not currently eligible for protected service.
+    /// @param beneficiary The ineligible proposed Beneficiary.
+    error StandbyHook__BeneficiaryNotEligible(address beneficiary);
+
+    /// @notice Thrown when every bounded enforcement reference is held by a still-binding commitment.
+    /// @dev A realization limit, never an economic one. It says nothing about whether the proposed
+    ///      commitment would have been backed, and it must never be reported as, or substituted for,
+    ///      insufficient backing.
+    error StandbyHook__EnforcementReferenceCapacityExhausted();
+
+    /// @notice Thrown when admitting a proposed commitment would leave the service unbacked.
+    /// @dev Distinct from `StandbyHook__InsufficientProspectiveBacking`, which compares a *derived
+    ///      post-transition* Supporting Capacity against the current obligation. This one compares the
+    ///      authoritative *present* Supporting Capacity against the obligation admission would create,
+    ///      because O1 changes the obligation and leaves the pool untouched.
+    /// @param supportingCapacity The authoritative current Supporting Capacity.
+    /// @param prospectiveObligation The Aggregate Capacity Obligation admission would establish.
+    error StandbyHook__InsufficientAdmissionBacking(uint256 supportingCapacity, uint256 prospectiveObligation);
 
     /// @notice Thrown when a predicted post-transition price would leave the closed service domain.
     /// @dev Distinct from `StandbyHook__CurrentPriceOutsideServiceDomain`, which reports that the
@@ -550,6 +622,103 @@ contract StandbyHook is BaseHook {
             address(_registry),
             _exerciseRouter,
             _establishmentAuthority
+        );
+    }
+
+    /// @notice Establishes one authoritative Standby commitment against the activated service.
+    /// @dev The O1 transition, and the point at which Aggregate Capacity Obligation can first become
+    ///      positive. It is deliberately not a pool transition: it moves no price, changes no liquidity,
+    ///      takes custody of nothing, and reserves nothing. What it establishes is an obligation that
+    ///      every later backing-affecting transition must respect.
+    ///
+    ///      The caller supplies only commitment-specific terms. Supporting Capacity, the current and
+    ///      prospective Aggregate Capacity Obligation, the proposed commitment's own Capacity Obligation,
+    ///      validity, binding status, the reference slot, the commitment identity, and the initial
+    ///      Remaining Entitlement are all derived here from authoritative facts. A caller with
+    ///      establishment authority determines terms, never economics.
+    ///
+    ///      The sequence is derive-first / persist-last (RR-O1-10). Every predicate — authority, service
+    ///      existence, the commitment terms, current Beneficiary eligibility, an available or
+    ///      authoritatively reclaimable bounded reference, and backing sufficiency — completes before the
+    ///      first authoritative write, so a rejected admission consumes no identity, writes no record,
+    ///      touches no reference, and changes no derived obligation.
+    ///
+    ///      Two of those failures look adjacent and are kept apart on purpose. A full bounded index is a
+    ///      realization limit and is refused as one even when backing would comfortably have covered the
+    ///      proposal; insufficient backing is an economic refusal. Collapsing them would make the
+    ///      realization's own capacity look like an economic verdict.
+    ///
+    ///      Establishment authority is resolved from the service, so service existence is a precondition
+    ///      of authenticating anybody rather than a check that could meaningfully precede it: an
+    ///      unconfigured Hook has no establishment authority for a caller to be. Both predicates precede
+    ///      everything else.
+    ///
+    ///      Nothing derived here is persisted. Capacity Obligation, validity, exercisability, and binding
+    ///      status are recomputed from the recorded facts on every later use, which is what lets an
+    ///      admitted commitment expire, and its reference become reclaimable, with no transaction sent to
+    ///      notice.
+    /// @param _beneficiary The account for whose benefit qualifying execution must be delivered.
+    /// @param _exerciseAuthority The account authorized to exercise the commitment.
+    /// @param _originalEntitlement The admitted entitlement extent, in raw protected-output units.
+    /// @param _exercisableFrom The admitted timestamp from which exercise may become possible.
+    /// @param _validUntil The admitted timestamp at which the entitlement stops being valid.
+    /// @return commitmentId The permanent identity allocated to the admitted commitment.
+    function establishCommitment(
+        address _beneficiary,
+        address _exerciseAuthority,
+        uint128 _originalEntitlement,
+        uint64 _exercisableFrom,
+        uint64 _validUntil
+    ) external returns (uint256 commitmentId) {
+        if (!_service.configured) revert StandbyHook__ServiceNotConfigured();
+        if (msg.sender != _service.establishmentAuthority) revert StandbyHook__NotEstablishmentAuthority(msg.sender);
+
+        _validateCommitmentTerms(_beneficiary, _exerciseAuthority, _originalEntitlement, _exercisableFrom, _validUntil);
+
+        if (!_service.registry.canReceiveProtectedService(_beneficiary)) {
+            revert StandbyHook__BeneficiaryNotEligible(_beneficiary);
+        }
+
+        uint256 currentObligation = _aggregateObligation();
+
+        (bool slotFound, uint256 slot) = _admissibleReferenceSlot();
+
+        if (!slotFound) revert StandbyHook__EnforcementReferenceCapacityExhausted();
+
+        uint256 prospectiveObligation =
+            currentObligation + StandbyMath.commitmentObligation(_originalEntitlement, _validUntil, block.timestamp);
+
+        uint256 capacity = _supportingCapacity();
+
+        if (capacity < prospectiveObligation) {
+            revert StandbyHook__InsufficientAdmissionBacking(capacity, prospectiveObligation);
+        }
+
+        PoolId admittedServiceId = _serviceId();
+
+        commitmentId = _recordCommitment(
+            Commitment({
+                serviceId: admittedServiceId,
+                beneficiary: _beneficiary,
+                exercisableFrom: _exercisableFrom,
+                exerciseAuthority: _exerciseAuthority,
+                validUntil: _validUntil,
+                originalEntitlement: _originalEntitlement,
+                remainingEntitlement: _originalEntitlement
+            })
+        );
+
+        _writeEnforcementReference(slot, commitmentId);
+
+        emit CommitmentEstablished(
+            commitmentId,
+            admittedServiceId,
+            _beneficiary,
+            _exerciseAuthority,
+            _originalEntitlement,
+            _exercisableFrom,
+            _validUntil,
+            slot
         );
     }
 
@@ -909,12 +1078,76 @@ contract StandbyHook is BaseHook {
         }
     }
 
+    /// @dev Validates the commitment-specific terms a proposed admission supplies.
+    ///
+    ///      These are the terms and nothing else: no economics, no eligibility, no capacity, no reference
+    ///      availability. Each rejection is its own condition with its own reason, so a caller learns
+    ///      which term was inadmissible rather than that "something" was.
+    ///
+    ///      An already-open exercise window is deliberately admissible. `exercisableFrom` in the past is
+    ///      an ordinary admitted term, not a defect: what admission requires is that the window can be
+    ///      open at some point before validity ends, and that validity has not already ended. Requiring a
+    ///      future `exercisableFrom` would refuse commitments the frozen semantics permit.
+    ///
+    ///      Temporal validity is asked of the F5 kernel rather than restated here, so admission and every
+    ///      later derivation agree by construction about what the half-open window means at its endpoint.
+    function _validateCommitmentTerms(
+        address _beneficiary,
+        address _exerciseAuthority,
+        uint128 _originalEntitlement,
+        uint64 _exercisableFrom,
+        uint64 _validUntil
+    ) internal view {
+        if (_beneficiary == address(0)) revert StandbyHook__InvalidBeneficiary();
+        if (_exerciseAuthority == address(0)) revert StandbyHook__InvalidExerciseAuthority();
+        if (_originalEntitlement == 0) revert StandbyHook__InvalidOriginalEntitlement();
+
+        if (_validUntil <= _exercisableFrom) {
+            revert StandbyHook__InvalidCommitmentWindow(_exercisableFrom, _validUntil);
+        }
+
+        if (!StandbyMath.isValid(_validUntil, block.timestamp)) {
+            revert StandbyHook__CommitmentAlreadyInvalid(_validUntil, block.timestamp);
+        }
+    }
+
+    /// @dev Locates a bounded reference slot a new commitment may occupy.
+    ///
+    ///      Two structurally different candidates, in one deliberate order. An empty slot is preferred,
+    ///      because taking one displaces nothing. Only when the index is structurally full does the scan
+    ///      ask an economic question, and it asks the F5 kernel: a slot may be taken over exactly when its
+    ///      commitment is permanently released from Capacity Obligation, which is the same predicate that
+    ///      makes that commitment's obligation zero. Reclaimability is therefore not a second notion of
+    ///      terminality living beside the obligation derivation — it is that derivation's own predicate
+    ///      (RR-O1-6, RR-O1-8).
+    ///
+    ///      A commitment that is merely not yet exercisable, or whose Beneficiary is currently
+    ///      ineligible, is not reclaimable and cannot be displaced however full the index is.
+    ///
+    ///      Reuse costs the displaced commitment its reference, never its record: history is permanent
+    ///      and stays readable under its own identity (RR-O1-7).
+    function _admissibleReferenceSlot() internal view returns (bool found, uint256 slot) {
+        (found, slot) = _enforcementRefs.firstEmptySlot();
+
+        if (found) return (found, slot);
+
+        uint256 timestamp = block.timestamp;
+
+        for (uint256 i = 0; i < MAX_LIVE_COMMITMENTS; ++i) {
+            Commitment storage record = _commitments[_enforcementRefs[i]];
+
+            if (StandbyMath.isPermanentlyNonBinding(record.remainingEntitlement, record.validUntil, timestamp)) {
+                return (true, i);
+            }
+        }
+    }
+
     /// @dev Allocates a permanent identity and writes the commitment facts under it.
     ///
     ///      This is storage mechanics, not admission. It authenticates nobody, validates no economic
     ///      term, and derives nothing: it records exactly the facts it is handed. Whether those facts
-    ///      describe an authentic, sufficiently backed Standby commitment is the admission slice's
-    ///      question, and no production path reaches this function until that slice exists.
+    ///      describe an authentic, sufficiently backed Standby commitment is `establishCommitment`'s
+    ///      question, and it is answered in full before this runs.
     ///
     ///      The identity is consumed before the record is written and the counter only increases, so a
     ///      reverted surrounding transaction releases the identity with the rest of the state and a
