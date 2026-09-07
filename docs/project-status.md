@@ -1,10 +1,10 @@
 # Standby — Project Status
 
-**Last Updated:** September 6, 2026
+**Last Updated:** September 7, 2026
 **Project Phase:** Solidity / Reference Implementation
-**Current Implementation Slice:** F6A — Preliminary O3 Enforcement with O = 0 (NEXT AUTHORIZED / NOT STARTED)
-**Last Closed Gate:** G5 — Authoritative Derivation Gate (CLOSED / PASS)
-**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 COMPLETE — F6A NOT STARTED
+**Current Implementation Slice:** F7 — O1 Commitment Admission (NEXT AUTHORIZED / NOT STARTED)
+**Last Closed Gate:** G6A — Structural O3 Enforcement Gate (CLOSED / PASS)
+**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 COMPLETE — F6A COMPLETE — F7 NOT STARTED
 
 ---
 
@@ -41,13 +41,15 @@ Implementation proceeds through the verification-gated F0–F10 ladder defined i
 
 The next authorized slice is:
 
-> **F6A — Preliminary O3 Enforcement with O = 0**
+> **F7 — O1 Commitment Admission**
 
 The last closed gate is:
 
-> **G5 — Authoritative Derivation Gate**
+> **G6A — Structural O3 Enforcement Gate**
 
-F0, F1, F2, F3, F4 and F5 have been implemented, verified, and explicitly gate-closed. The targeted G3 revalidation required by the F5 prospective-derivability correction also passed, and G3 remains closed. F6A is the next authorized implementation slice and has not been started.
+F0, F1, F2, F3, F4, F5 and F6A have been implemented, verified, and explicitly gate-closed. The targeted G3 revalidation required by the F5 prospective-derivability correction also passed, and G3 remains closed.
+
+F6A was reviewed independently and G6A was explicitly closed. F7 is the next authorized implementation slice and has not been started.
 
 ---
 
@@ -63,8 +65,8 @@ Current implementation sequence:
 | F3    | StandbyHook Trust + PES Configuration             | **COMPLETE — G3 CLOSED**     |
 | F4    | Commitment Storage + Bounded References           | **COMPLETE — G4 CLOSED**     |
 | F5    | Authoritative Derivation Kernel                   | **COMPLETE — G5 CLOSED**     |
-| F6A   | Preliminary O3 Enforcement with O = 0             | **NEXT / NOT STARTED**       |
-| F7    | O1 Commitment Establishment                       | NOT STARTED                  |
+| F6A   | Preliminary O3 Enforcement with O = 0             | **COMPLETE — G6A CLOSED**    |
+| F7    | O1 Commitment Establishment                       | **NEXT / NOT STARTED**       |
 | F6B   | O3 Enforcement with Authentic O > 0               | NOT STARTED                  |
 | F8A   | O2 Authorization                                  | NOT STARTED                  |
 | F8B   | O2 Exact-Output Execution + Causal Evidence       | NOT STARTED                  |
@@ -206,7 +208,12 @@ F3 adds H1 — Trust / Configuration:
 - one-shot Protected Execution Service configuration;
 - persistence of the admitted PES semantic basis.
 
-The four enabled callbacks remain fail-closed until their downstream owning slices implement authoritative behavior.
+F6A adds ordinary O3 enforcement across the four enabled callbacks: configured-service authentication,
+trusted-perimeter authentication per transition family, authenticated originating-user recovery,
+transition-specific eligibility, service-domain and topology enforcement, and the prospective backing
+comparison against the authoritatively derived Aggregate Capacity Obligation. `afterSwap` is economically
+inert completion plumbing. Commitment admission and exercise remain unimplemented, so no production path
+creates a commitment and the derived obligation is zero in every currently reachable state.
 
 ### `script/DeployStandbyHook.s.sol`
 
@@ -359,13 +366,14 @@ G2 verified predicate independence, administrator authority, read fidelity, cros
 
 ## 10. Current Blocker
 
-There is no unresolved F0, F1, F2, F3, F4 or F5 implementation responsibility and no open gate.
+There is no unresolved F0, F1, F2, F3, F4, F5 or F6A implementation responsibility and no open gate.
 
 The next unstarted responsibility is:
 
-> **F6A — Preliminary O3 Enforcement with O = 0.**
+> **F7 — O1 Commitment Admission.**
 
-F6A is authorized as the next implementation slice but has not been started.
+F7 is authorized as the next implementation slice but has not been started. No further downstream slice —
+F6B or any F8 slice — is authorized.
 
 Known limitations carried forward from F0, none of which blocked G0:
 
@@ -374,8 +382,9 @@ Known limitations carried forward from F0, none of which blocked G0:
   added with validated addresses before any public deployment;
 - the broadcasting `run()` path is verified in Foundry script simulation, not against a live Anvil
   node with `--broadcast`;
-- the four enabled Hook callbacks intentionally fail closed with `HookNotImplemented`. `StandbyHook`
-  must not be attached to a live pool until its enforcement slices are implemented.
+- the four enabled Hook callbacks now enforce ordinary O3 admission, and refuse everything while no
+  Protected Execution Service is configured. `StandbyHook` must still not be attached to a live pool
+  before its service is activated, and commitment admission and exercise remain unimplemented.
 
 ---
 
@@ -567,11 +576,11 @@ The root `CLAUDE.md` will define the repository operating rules and document aut
 
 ## 18. Next Action
 
-G5 has been reviewed and closed, so the next action is:
+G6A has been reviewed and closed, so the next action is:
 
-> **F6A — Preliminary O3 Enforcement with O = 0.**
+> **F7 — O1 Commitment Admission.**
 
-F6A may begin when explicitly tasked. Its own verification gates govern advancement beyond the F6A boundary.
+F7 may begin when explicitly tasked. Its own verification gates govern advancement beyond the F7 boundary.
 
 ---
 
@@ -587,16 +596,17 @@ F6A may begin when explicitly tasked. Its own verification gates govern advancem
 - F4 Commitment Storage + Bounded Enforcement References is complete and G4 is closed.
 - F5 Authoritative Derivation Kernel is complete and G5 is closed.
 - The targeted G3 revalidation required by the F5 prospective-derivability correction passed, and G3 remains closed.
-- No F6A+ O3, O1, or O2 behavior has been introduced.
+- F6A Preliminary O3 Enforcement with O = 0 is complete and G6A is closed.
+- No O1 admission, authentic positive obligation, or O2 behavior has been introduced.
 
 **Current Gate**
 
-- G5 — CLOSED / PASS. No gate is currently open.
+- G6A — CLOSED / PASS. No gate is currently open.
 
 **Next Blocker**
 
-- F6A — Preliminary O3 Enforcement with O = 0 has not been started.
+- F7 — O1 Commitment Admission has not been started.
 
 **Immediate Next Step**
 
-- Begin F6A when explicitly tasked.
+- Begin F7 when explicitly tasked.

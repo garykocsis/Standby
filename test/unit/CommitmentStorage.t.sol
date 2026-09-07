@@ -5,9 +5,6 @@ pragma solidity 0.8.26;
                               IMPORTS
 //////////////////////////////////////////////////////////////*/
 
-import {BaseHook} from "v4-hooks-public/src/base/BaseHook.sol";
-
-import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/types/BalanceDelta.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {ModifyLiquidityParams, SwapParams} from "v4-core/types/PoolOperation.sol";
@@ -445,29 +442,29 @@ contract CommitmentStorageTest is BaseCommitmentStorageTest {
         }
     }
 
-    /// @notice Proves the four enabled callbacks still fail closed at the F4 frontier.
-    /// @dev Called as the PoolManager, so the rejection is the missing enforcement behavior rather than
-    ///      the caller check. F4 introduced commitment storage without introducing O3 enforcement, O1
-    ///      admission, or O2 exercise, and the Hook must still not be attached to a live pool.
-    function test_enabledCallbacks_remainFailClosedAtTheF4Frontier() public {
+    /// @notice Proves commitment storage created no transition path into an unconfigured Hook.
+    /// @dev Called as the PoolManager, so the rejection is the missing Protected Execution Service rather
+    ///      than the caller check. Every admission callback refuses, which is what F4 must leave true:
+    ///      storage mechanics exist, and nothing reaches them through a pool transition.
+    ///
+    ///      `afterSwap` is deliberately not in this list. It is economically inert completion plumbing owned
+    ///      by the ordinary-transition enforcement slice, it decides nothing, and its inertness is evidenced
+    ///      where that slice is verified rather than asserted here as a storage property.
+    function test_enabledAdmissionCallbacks_failClosedWithoutAConfiguredService() public {
         PoolKey memory key;
         ModifyLiquidityParams memory liquidityParams;
         SwapParams memory swapParams;
-        BalanceDelta delta = BalanceDeltaLibrary.ZERO_DELTA;
 
         vm.startPrank(address(poolManager));
 
-        vm.expectRevert(BaseHook.HookNotImplemented.selector);
+        vm.expectRevert(StandbyHook.StandbyHook__ServiceNotConfigured.selector);
         hook.beforeAddLiquidity(address(this), key, liquidityParams, "");
 
-        vm.expectRevert(BaseHook.HookNotImplemented.selector);
+        vm.expectRevert(StandbyHook.StandbyHook__ServiceNotConfigured.selector);
         hook.beforeRemoveLiquidity(address(this), key, liquidityParams, "");
 
-        vm.expectRevert(BaseHook.HookNotImplemented.selector);
+        vm.expectRevert(StandbyHook.StandbyHook__ServiceNotConfigured.selector);
         hook.beforeSwap(address(this), key, swapParams, "");
-
-        vm.expectRevert(BaseHook.HookNotImplemented.selector);
-        hook.afterSwap(address(this), key, swapParams, delta, "");
 
         vm.stopPrank();
     }

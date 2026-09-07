@@ -7,6 +7,7 @@ pragma solidity 0.8.26;
 
 import {BaseHook} from "v4-hooks-public/src/base/BaseHook.sol";
 
+import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {LiquidityMath} from "v4-core/libraries/LiquidityMath.sol";
@@ -16,10 +17,13 @@ import {SafeCast} from "v4-core/libraries/SafeCast.sol";
 import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 import {SwapMath} from "v4-core/libraries/SwapMath.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
+import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
+import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {ModifyLiquidityParams, SwapParams} from "v4-core/types/PoolOperation.sol";
 
+import {IActorAwarePeriphery} from "./interfaces/IActorAwarePeriphery.sol";
 import {IEligibilityRegistry} from "./interfaces/IEligibilityRegistry.sol";
 import {
     CommitmentRefs,
@@ -35,12 +39,14 @@ import {StandbyMath} from "./libraries/StandbyMath.sol";
 
 /// @title StandbyHook
 /// @notice The Standby Uniswap v4 Hook.
-/// @dev At implementation slice F5 this contract owns the Hook-wide immutable trust basis, one one-shot
+/// @dev At implementation slice F6A this contract owns the Hook-wide immutable trust basis, one one-shot
 ///      Protected Execution Service configuration, the authoritative commitment record store with its
-///      bounded enforcement-reference index, and the composition of the authoritative economic derivation
-///      kernel. It does not yet own commitment admission, exercise, or O3 enforcement, so the four enabled
-///      callbacks still fail closed with `HookNotImplemented` until their owning implementation slices
-///      supply authoritative behavior, and no production path can create a commitment.
+///      bounded enforcement-reference index, the composition of the authoritative economic derivation
+///      kernel, and the admission or rejection of ordinary O3 backing-affecting pool transitions. It does
+///      not yet own commitment admission or exercise, so no production path can create a commitment and
+///      Aggregate Capacity Obligation therefore derives to zero in every currently reachable state. That
+///      is a consequence of what has been built, never an assumption: enforcement obtains the obligation
+///      from the same derivation that will report a positive one once admission exists.
 ///
 ///      The derivation kernel is composition, not a second economics. The Hook is where authoritative
 ///      inputs meet economic consequence: it reads PoolManager state, the immutable service basis, the
@@ -63,7 +69,13 @@ import {StandbyMath} from "./libraries/StandbyMath.sol";
 ///      The ordinary-swap perimeter and the liquidity perimeter are distinct roles and are held in
 ///      distinct immutables. A deployment may give one address both roles without collapsing their
 ///      meanings, exactly as the EligibilityRegistry keeps its three predicates distinct under one
-///      administrator.
+///      administrator. Each enabled callback authenticates the perimeter its own transition family
+///      designates, so a perimeter trusted for one family authorizes nothing in the other.
+///
+///      Three identities stay distinct in every callback and are never collapsed: the Hook's own
+///      `msg.sender`, which must be the immutable PoolManager; the callback sender, which must be the
+///      configured perimeter for that transition family; and the economic actor, which is the originating
+///      user that perimeter authenticates. `hookData` and `tx.origin` establish neither of the last two.
 contract StandbyHook is BaseHook {
     using CommitmentRefs for uint256[BOUNDED_REFERENCE_SLOTS];
     using LPFeeLibrary for uint24;
@@ -383,6 +395,42 @@ contract StandbyHook is BaseHook {
     /// @param liquidityDelta The proposed liquidity delta.
     error StandbyHook__NotALiquidityRemoval(int256 liquidityDelta);
 
+    /// @notice Thrown when a callback concerns a pool that is not this Hook's configured service.
+    /// @dev Callback enablement is a property of the Hook address, so any pool may bind this Hook. Only
+    ///      the one configured service pool is a Standby transition; every other pool is refused rather
+    ///      than enforced against the wrong service basis.
+    /// @param poolId The PoolId the callback concerned.
+    error StandbyHook__PoolIsNotConfiguredService(PoolId poolId);
+
+    /// @notice Thrown when an ordinary swap does not arrive through the trusted ordinary-swap perimeter.
+    /// @param sender The callback sender that attempted the transition.
+    error StandbyHook__UntrustedSwapPerimeter(address sender);
+
+    /// @notice Thrown when a liquidity action does not arrive through the trusted liquidity perimeter.
+    /// @param sender The callback sender that attempted the transition.
+    error StandbyHook__UntrustedLiquidityPerimeter(address sender);
+
+    /// @notice Thrown when the authenticated actor of an ordinary swap is not an eligible trader.
+    /// @param actor The authenticated originating user.
+    error StandbyHook__TraderNotEligible(address actor);
+
+    /// @notice Thrown when the authenticated actor of a liquidity addition is not an eligible provider.
+    /// @param actor The authenticated originating user.
+    error StandbyHook__LiquidityProviderNotEligible(address actor);
+
+    /// @notice Thrown when a liquidity addition would initialize a boundary strictly inside the domain.
+    /// @dev The single-active-liquidity-region topology is what makes Supporting Capacity and every
+    ///      prospective derivation authoritative, so this is refused however eligible the provider is and
+    ///      however much liquidity the addition would contribute.
+    /// @param tickLower The lower endpoint of the proposed liquidity range.
+    /// @param tickUpper The upper endpoint of the proposed liquidity range.
+    error StandbyHook__ProhibitedInteriorLiquidityBoundary(int24 tickLower, int24 tickUpper);
+
+    /// @notice Thrown when a proposed transition would leave Supporting Capacity below the obligation.
+    /// @param prospectiveCapacity The Supporting Capacity the proposed transition would leave behind.
+    /// @param obligation The authoritative current Aggregate Capacity Obligation.
+    error StandbyHook__InsufficientProspectiveBacking(uint256 prospectiveCapacity, uint256 obligation);
+
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -664,6 +712,202 @@ contract StandbyHook is BaseHook {
     /*//////////////////////////////////////////////////////////////
                          INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @dev Decides whether a proposed ordinary swap may become an authoritative pool transition.
+    ///
+    ///      Every reachable swap here is an ordinary O3 transition. O2 classification requires an
+    ///      authoritative exercise causal context, no production path can establish one yet, and router
+    ///      identity alone never classifies a swap as O2 — a commitment-shaped payload from any router is
+    ///      ordinary activity.
+    ///
+    ///      The decision sequence separates four questions that must never merge. Whether the callback is
+    ///      authentic: `onlyPoolManager` answers that before this runs. Whether the transition belongs to
+    ///      this service and arrives through the perimeter that may authenticate its participant.
+    ///      Whether the originating user may trade at all. And finally what the transition would do to the
+    ///      economics, which is derived rather than asserted: the F5 prospective-state derivation predicts
+    ///      the exact post-swap state, the same capacity kernel measures it, and the authoritative current
+    ///      Aggregate Capacity Obligation is what it is compared against.
+    ///
+    ///      Two rejections that look alike are deliberately distinct. A predicted price outside the closed
+    ///      service domain is refused as a realization-domain violation, not reported as some quantity of
+    ///      capacity, and that refusal does not weaken when the obligation happens to be zero. Insufficient
+    ///      prospective backing is refused as an economic violation. Neither substitutes for the other.
+    ///
+    ///      One derivation and one comparison serve both directions, rather than a protected-direction rule
+    ///      plus a mirrored opposite-direction one. The protected direction is the case that ordinarily
+    ///      consumes capacity, but "ordinarily" is not "always": an opposite-direction swap that reaches a
+    ///      liquidity boundary sitting exactly on a service boundary crosses it, and leaves less active
+    ///      liquidity behind than it found. SPEC-B10 governs any transition whose Supporting Capacity can
+    ///      change, so the same comparison covers both, and covering both is what makes the enforcement
+    ///      surface complete rather than merely correct on the expected path. This is not symmetry for its
+    ///      own sake: there is no second formula here, only one authoritative derivation used once.
+    function _beforeSwap(address _sender, PoolKey calldata _key, SwapParams calldata _params, bytes calldata)
+        internal
+        view
+        virtual
+        override
+        returns (bytes4 selector, BeforeSwapDelta delta, uint24 lpFeeOverride)
+    {
+        _requireConfiguredServicePool(_key);
+
+        if (_sender != i_trustedUniversalRouter) revert StandbyHook__UntrustedSwapPerimeter(_sender);
+
+        address actor = _authenticatedActor(_sender);
+
+        if (!_service.registry.canSwap(actor)) revert StandbyHook__TraderNotEligible(actor);
+
+        (uint160 sqrtPriceX96, uint128 liquidity) = _prospectiveSwapState(_params);
+
+        _requireProspectiveBacking(sqrtPriceX96, liquidity);
+
+        (selector, delta, lpFeeOverride) = (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+    }
+
+    /// @dev Completes an ordinary O3 swap callback and does nothing else.
+    ///
+    ///      `afterSwap` is enabled because the exercise slice will need it, so every permitted ordinary
+    ///      swap invokes it and it cannot be left failing closed. What it must not do is acquire that later
+    ///      responsibility early: it is not execution evidence, not fulfillment proof, not settlement, and
+    ///      it mutates nothing. The backing decision was already made, from derived prospective state,
+    ///      before the transition became authoritative.
+    ///
+    ///      It takes no delta, because the Hook declares no return-delta permission.
+    function _afterSwap(address, PoolKey calldata, SwapParams calldata, BalanceDelta, bytes calldata)
+        internal
+        pure
+        virtual
+        override
+        returns (bytes4 selector, int128 hookDelta)
+    {
+        (selector, hookDelta) = (IHooks.afterSwap.selector, int128(0));
+    }
+
+    /// @dev Decides whether a proposed liquidity addition may become an authoritative pool transition.
+    ///
+    ///      Addition is permissioned on the way in: introducing or increasing liquidity requires current
+    ///      liquidity-action eligibility of the authenticated originating user, which is a different
+    ///      permission domain from trader eligibility and from Beneficiary eligibility.
+    ///
+    ///      Topology is enforced independently of backing. An addition cannot reduce Supporting Capacity,
+    ///      so no prospective backing comparison is manufactured for it — but it can initialize a liquidity
+    ///      boundary strictly inside the service domain, which would destroy the single-active-region basis
+    ///      every authoritative derivation depends on. That refusal is a realization-domain requirement and
+    ///      holds whatever the current obligation is.
+    function _beforeAddLiquidity(
+        address _sender,
+        PoolKey calldata _key,
+        ModifyLiquidityParams calldata _params,
+        bytes calldata
+    ) internal view virtual override returns (bytes4 selector) {
+        _requireConfiguredServicePool(_key);
+
+        if (_sender != i_trustedPositionManager) revert StandbyHook__UntrustedLiquidityPerimeter(_sender);
+
+        address actor = _authenticatedActor(_sender);
+
+        if (!_service.registry.canProvideLiquidity(actor)) revert StandbyHook__LiquidityProviderNotEligible(actor);
+
+        if (
+            ServiceDomain.introducesInteriorBoundary(
+                _params.tickLower, _params.tickUpper, _service.tickQ, _service.tickO
+            )
+        ) {
+            revert StandbyHook__ProhibitedInteriorLiquidityBoundary(_params.tickLower, _params.tickUpper);
+        }
+
+        selector = IHooks.beforeAddLiquidity.selector;
+    }
+
+    /// @dev Decides whether a proposed liquidity reduction may become an authoritative pool transition.
+    ///
+    ///      Removal is deliberately not the mirror image of addition. Liquidity-action eligibility governs
+    ///      introducing liquidity, not keeping the ability to withdraw it: a provider who loses eligibility
+    ///      after contributing must still be able to exit, or eligibility administration would become a
+    ///      capital trap and a backdoor over property that was never Standby's to hold. No eligibility
+    ///      predicate is therefore consulted here, and — because none is — no originating user is
+    ///      recovered. Recovering one would imply an authorization question that does not exist. The
+    ///      trusted execution perimeter is still authenticated, because the permissioned MVP admits
+    ///      authoritative pool transitions only through it.
+    ///
+    ///      What removal is subject to is backing, because it can reduce active liquidity and therefore
+    ///      Supporting Capacity. The F5 prospective-removal derivation supplies the post-removal state and
+    ///      the same capacity kernel measures it.
+    ///
+    ///      Uniswap routes every non-positive liquidity delta here, including the zero-delta operation that
+    ///      collects fees. That operation changes neither active liquidity nor price, so it is classified
+    ///      by its actual effect rather than by which callback dispatched it: its prospective state is the
+    ///      present state, and it is neither refused nor given economic meaning it does not have.
+    function _beforeRemoveLiquidity(
+        address _sender,
+        PoolKey calldata _key,
+        ModifyLiquidityParams calldata _params,
+        bytes calldata
+    ) internal view virtual override returns (bytes4 selector) {
+        _requireConfiguredServicePool(_key);
+
+        if (_sender != i_trustedPositionManager) revert StandbyHook__UntrustedLiquidityPerimeter(_sender);
+
+        uint160 sqrtPriceX96;
+        uint128 liquidity;
+
+        if (_params.liquidityDelta == 0) {
+            (, sqrtPriceX96,, liquidity) = _currentPoolState();
+        } else {
+            (sqrtPriceX96, liquidity) = _prospectiveLiquidityRemovalState(_params);
+        }
+
+        _requireProspectiveBacking(sqrtPriceX96, liquidity);
+
+        selector = IHooks.beforeRemoveLiquidity.selector;
+    }
+
+    /// @dev Requires the callback to concern the activated Protected Execution Service of this Hook.
+    ///
+    ///      A Hook address encodes its callback permissions, so anyone may initialize an unrelated pool
+    ///      that binds this Hook. Such a pool is not this service: its state is not the state Standby
+    ///      derives from, and enforcing the configured service basis against it would be enforcing the
+    ///      wrong economics. It is refused instead.
+    function _requireConfiguredServicePool(PoolKey calldata _key) internal view {
+        if (!_service.configured) revert StandbyHook__ServiceNotConfigured();
+
+        PoolId poolId = _key.toId();
+
+        if (PoolId.unwrap(poolId) != PoolId.unwrap(_serviceId())) {
+            revert StandbyHook__PoolIsNotConfiguredService(poolId);
+        }
+    }
+
+    /// @dev Obtains the authenticated originating user from an already-authenticated trusted perimeter.
+    ///
+    ///      The order matters and is the whole point: the caller has established that `_perimeter` is
+    ///      exactly the immutable perimeter configured for this transition family before this runs. Asking
+    ///      an arbitrary callback sender who its user is, and only then deciding whether to trust it, would
+    ///      let any contract that implements the interface nominate an economic actor.
+    ///
+    ///      A trusted perimeter with no routed action in flight fails closed rather than answering, so an
+    ///      absent execution context cannot produce an actor.
+    function _authenticatedActor(address _perimeter) internal view returns (address actor) {
+        actor = IActorAwarePeriphery(_perimeter).msgSender();
+    }
+
+    /// @dev Requires a predicted post-transition state to keep the service backed.
+    ///
+    ///      Both sides of the comparison are authoritative derivations rather than assertions: prospective
+    ///      Supporting Capacity comes from the derived post-transition state through the one capacity
+    ///      kernel, and the Aggregate Capacity Obligation is derived from the persisted commitment facts
+    ///      over the bounded reference index at the current time. Nothing here knows or cares what that
+    ///      obligation currently is.
+    ///
+    ///      Exact sufficiency is accepted: a transition that leaves capacity exactly equal to the
+    ///      obligation preserves backing and must not be refused.
+    function _requireProspectiveBacking(uint160 _sqrtPriceX96, uint128 _liquidity) internal view {
+        uint256 prospectiveCapacity = _prospectiveSupportingCapacity(_sqrtPriceX96, _liquidity);
+        uint256 obligation = _aggregateObligation();
+
+        if (prospectiveCapacity < obligation) {
+            revert StandbyHook__InsufficientProspectiveBacking(prospectiveCapacity, obligation);
+        }
+    }
 
     /// @dev Allocates a permanent identity and writes the commitment facts under it.
     ///
