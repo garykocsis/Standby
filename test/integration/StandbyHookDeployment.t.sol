@@ -7,7 +7,6 @@ pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 
-import {BaseHook} from "v4-hooks-public/src/base/BaseHook.sol";
 import {HookMiner} from "v4-hooks-public/src/utils/HookMiner.sol";
 
 import {PoolManager} from "v4-core/PoolManager.sol";
@@ -255,17 +254,17 @@ contract StandbyHookDeploymentTest is Test {
         assertEq(hook.i_configurationAuthority(), configurationAuthority, "the original binding is unchanged");
     }
 
-    /// @notice Records the current F0 implementation state: enabled callbacks are not implemented yet.
-    /// @dev F0 deploys the required permission surface without weakening it, so the enabled callbacks
-    ///      exist but carry no behavior. This is an implementation-state regression test for F0, not a
-    ///      Standby economic invariant: the later enforcement slices are expected to replace this
-    ///      `HookNotImplemented` revert with authoritative behavior and to retire this test.
-    function test_enabledCallbacks_failClosedUntilEnforcementIsImplemented() public {
+    /// @notice Proves a deployed but unconfigured Hook admits no pool transition.
+    /// @dev The canonical deployment procedure produces a Hook with the complete enabled permission
+    ///      surface and no Protected Execution Service. Enforcement has nothing to enforce against in that
+    ///      state — no pool identity, no service domain, no registry — so it refuses rather than improvises.
+    ///      Called as the PoolManager, so the rejection is the missing service and not the caller check.
+    function test_enabledCallbacks_failClosedWithoutAConfiguredService() public {
         PoolKey memory key;
         SwapParams memory params;
 
         vm.prank(address(poolManager));
-        vm.expectRevert(BaseHook.HookNotImplemented.selector);
+        vm.expectRevert(StandbyHook.StandbyHook__ServiceNotConfigured.selector);
         hook.beforeSwap(address(this), key, params, "");
     }
 

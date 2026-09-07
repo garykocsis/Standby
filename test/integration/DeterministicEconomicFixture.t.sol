@@ -7,8 +7,6 @@ pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 
-import {BaseHook} from "v4-hooks-public/src/base/BaseHook.sol";
-
 import {PoolManager} from "v4-core/PoolManager.sol";
 import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
@@ -47,10 +45,10 @@ import {ReferenceCalculations} from "../shared/ReferenceCalculations.sol";
 ///
 ///      - `canonicalPoolKey` binds the real StandbyHook. Frozen realization requirement RR-CONFIG-1
 ///        establishes the pool, binding the Hook, before Standby configuration and before liquidity, and
-///        `configureAndActivate` later requires the pool's liquidity to be zero. At F1 the Hook's four
-///        enabled callbacks also still fail closed with `HookNotImplemented`, so a liquidity addition to
-///        this pool cannot succeed and must not be made to succeed by implementing F3/F6A behavior here.
-///        This pool therefore carries the canonical identity evidence and no liquidity.
+///        `configureAndActivate` later requires the pool's liquidity to be zero. This fixture activates no
+///        service, and the Hook's liquidity admission refuses every addition while no service exists, so a
+///        liquidity addition to this pool cannot succeed and must not be made to succeed by configuring a
+///        service here. This pool therefore carries the canonical identity evidence and no liquidity.
 ///
 ///      - `geometryPoolKey` is the same currencies, fee, and tick spacing with no Hook. It carries the
 ///        canonical liquidity position, and is the pool from which the canonical initial capacity
@@ -312,18 +310,18 @@ contract DeterministicEconomicFixtureTest is Test {
         assertEq(poolManager.getLiquidity(canonicalPoolId), 0, "the canonical pool must hold no liquidity at F1");
     }
 
-    /// @notice Proves liquidity cannot yet be added to the Hook-bound canonical pool.
-    /// @dev The Hook's `beforeAddLiquidity` permission is enabled and still fails closed with
-    ///      `HookNotImplemented`. Authoritative liquidity admission belongs to the later enforcement
-    ///      slice that implements it, and F1 must not supply that behavior to make a fixture convenient.
-    ///      This is the concrete evidence that the canonical liquidity position cannot be established in
-    ///      the Hook-bound pool at F1.
-    function test_canonicalHookBoundPool_rejectsLiquidityAdditionUntilEnforcementIsImplemented() public {
+    /// @notice Proves liquidity cannot be added to the Hook-bound canonical pool before activation.
+    /// @dev The Hook's `beforeAddLiquidity` permission is enabled and refuses every addition while no
+    ///      Protected Execution Service exists. Authoritative liquidity admission belongs to the
+    ///      enforcement slice that owns it, and F1 must not supply that behavior to make a fixture
+    ///      convenient. This is the concrete evidence that the canonical liquidity position cannot be
+    ///      established in the Hook-bound pool at F1.
+    function test_canonicalHookBoundPool_rejectsLiquidityAdditionBeforeServiceActivation() public {
         bytes memory expectedRevert = abi.encodeWithSelector(
             CustomRevert.WrappedError.selector,
             address(hook),
             IHooks.beforeAddLiquidity.selector,
-            abi.encodeWithSelector(BaseHook.HookNotImplemented.selector),
+            abi.encodeWithSelector(StandbyHook.StandbyHook__ServiceNotConfigured.selector),
             abi.encodePacked(Hooks.HookCallFailed.selector)
         );
 
