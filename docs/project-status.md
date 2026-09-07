@@ -2,9 +2,9 @@
 
 **Last Updated:** September 7, 2026
 **Project Phase:** Solidity / Reference Implementation
-**Current Implementation Slice:** F6B — O3 Enforcement with Authentic O > 0 (NEXT AUTHORIZED / NOT STARTED)
-**Last Closed Gate:** G7 — O1 Commitment Admission Gate (CLOSED / PASS)
-**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 COMPLETE — F6A COMPLETE — F7 COMPLETE — F6B NOT STARTED
+**Current Implementation Slice:** F8A — O2 Authorization / Hook-Owned Causal Context (NEXT AUTHORIZED / NOT STARTED)
+**Last Closed Gate:** G6B — Authentic O3 Backing Gate (CLOSED / PASS)
+**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 COMPLETE — F6A COMPLETE — F7 COMPLETE — F6B COMPLETE — F8A NOT STARTED
 
 ---
 
@@ -41,15 +41,15 @@ Implementation proceeds through the verification-gated F0–F10 ladder defined i
 
 The next authorized slice is:
 
-> **F6B — O3 Enforcement with Authentic O > 0**
+> **F8A — O2 Authorization / Hook-Owned Causal Context**
 
 The last closed gate is:
 
-> **G7 — O1 Commitment Admission Gate**
+> **G6B — Authentic O3 Backing Gate**
 
-F0, F1, F2, F3, F4, F5, F6A and F7 have been implemented, verified, and explicitly gate-closed. The targeted G3 revalidation required by the F5 prospective-derivability correction also passed, and G3 remains closed.
+F0, F1, F2, F3, F4, F5, F6A, F7 and F6B have been implemented, verified, and explicitly gate-closed. The targeted G3 revalidation required by the F5 prospective-derivability correction also passed, and G3 remains closed.
 
-F7 was reviewed independently and G7 was explicitly closed. F6B is the next authorized implementation slice and has not been started.
+F6B was reviewed independently and G6B was explicitly closed. F8A is the next authorized implementation slice and has not been started.
 
 ---
 
@@ -67,8 +67,8 @@ Current implementation sequence:
 | F5    | Authoritative Derivation Kernel                   | **COMPLETE — G5 CLOSED**     |
 | F6A   | Preliminary O3 Enforcement with O = 0             | **COMPLETE — G6A CLOSED**    |
 | F7    | O1 Commitment Establishment                       | **COMPLETE — G7 CLOSED**     |
-| F6B   | O3 Enforcement with Authentic O > 0               | **NEXT / NOT STARTED**       |
-| F8A   | O2 Authorization                                  | NOT STARTED                  |
+| F6B   | O3 Enforcement with Authentic O > 0               | **COMPLETE — G6B CLOSED**    |
+| F8A   | O2 Authorization                                  | **NEXT / NOT STARTED**       |
 | F8B   | O2 Exact-Output Execution + Causal Evidence       | NOT STARTED                  |
 | F8C   | O2 Input Settlement + Direct Beneficiary Delivery | NOT STARTED                  |
 | F8D   | O2 Causal Finalization                            | NOT STARTED                  |
@@ -367,14 +367,14 @@ G2 verified predicate independence, administrator authority, read fidelity, cros
 
 ## 10. Current Blocker
 
-There is no unresolved F0, F1, F2, F3, F4, F5, F6A or F7 implementation responsibility and no open gate.
+There is no unresolved F0, F1, F2, F3, F4, F5, F6A, F7 or F6B implementation responsibility and no open gate.
 
 The next unstarted responsibility is:
 
-> **F6B — O3 Enforcement with Authentic O > 0.**
+> **F8A — O2 Authorization / Hook-Owned Causal Context.**
 
-F6B is authorized as the next implementation slice but has not been started. No further downstream slice —
-any F8 slice — is authorized.
+F8A is authorized as the next implementation slice but has not been started. No further downstream slice —
+F8B, F8C or F8D — is authorized.
 
 Known limitations carried forward from F0, none of which blocked G0:
 
@@ -577,11 +577,11 @@ The root `CLAUDE.md` will define the repository operating rules and document aut
 
 ## 18. Next Action
 
-G7 has been reviewed and closed, so the next action is:
+G6B has been reviewed and closed, so the next action is:
 
-> **F6B — O3 Enforcement with Authentic O > 0.**
+> **F8A — O2 Authorization / Hook-Owned Causal Context.**
 
-F6B may begin when explicitly tasked. Its own verification gate governs advancement beyond the F6B boundary.
+F8A may begin when explicitly tasked. Its own verification gate governs advancement beyond the F8A boundary.
 
 ---
 
@@ -599,16 +599,17 @@ F6B may begin when explicitly tasked. Its own verification gate governs advancem
 - The targeted G3 revalidation required by the F5 prospective-derivability correction passed, and G3 remains closed.
 - F6A Preliminary O3 Enforcement with O = 0 is complete and G6A is closed.
 - F7 O1 Commitment Admission is complete and G7 is closed.
+- F6B O3 Enforcement with Authentic O > 0 is complete and G6B is closed.
 - No O2 behavior has been introduced.
 
 **Current Gate**
 
-- G7 — CLOSED / PASS. No gate is currently open.
+- G6B — CLOSED / PASS. No gate is currently open.
 
 **Next Blocker**
 
-- F6B — O3 Enforcement with Authentic O > 0 has not been started.
+- F8A — O2 Authorization / Hook-Owned Causal Context has not been started.
 
 **Immediate Next Step**
 
-- Begin F6B when explicitly tasked.
+- Begin F8A when explicitly tasked.
