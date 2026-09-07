@@ -104,7 +104,6 @@ abstract contract BaseActorAwareStandbyTest is Test {
     ///         deployment, configuration, and production-transition paths only.
     function setUp() public virtual {
         configurationAuthority = makeAddr("configurationAuthority");
-        exerciseRouter = makeAddr("exerciseRouter");
         establishmentAuthority = makeAddr("establishmentAuthority");
         registryAdmin = makeAddr("registryAdmin");
 
@@ -120,13 +119,9 @@ abstract contract BaseActorAwareStandbyTest is Test {
         liquidityPerimeter = new ActorAwareTestRouter(poolManager);
 
         hookDeployer = new DeployStandbyHook();
-        (hook,) = hookDeployer.deployStandbyHook(
-            poolManager,
-            address(hookDeployer),
-            configurationAuthority,
-            address(swapPerimeter),
-            address(liquidityPerimeter)
-        );
+        hook = _deployServiceHook();
+
+        exerciseRouter = _resolveExerciseRouter();
 
         registry = new EligibilityRegistry(registryAdmin);
 
@@ -178,6 +173,34 @@ abstract contract BaseActorAwareStandbyTest is Test {
     /*//////////////////////////////////////////////////////////////
                          INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @dev Deploys the Hook the fixture activates its Protected Execution Service on.
+    ///
+    ///      The canonical deployment procedure, which is what every fixture built on this layer should
+    ///      use. It is overridable for one reason only: a slice whose required evidence includes a state
+    ///      the production system cannot reach needs a harness Hook standing in the production Hook's
+    ///      place, with the rest of the fixture — pool, activation, liquidity, registry, perimeters —
+    ///      unchanged. Overriding it is harness use and inherits every restriction harness use carries.
+    function _deployServiceHook() internal virtual returns (StandbyHook deployed) {
+        (deployed,) = hookDeployer.deployStandbyHook(
+            poolManager,
+            address(hookDeployer),
+            configurationAuthority,
+            address(swapPerimeter),
+            address(liquidityPerimeter)
+        );
+    }
+
+    /// @dev Resolves the O2 coordinator the service is activated with.
+    ///
+    ///      A plain address by default, because until O2 exists the ExerciseRouter is a configured identity
+    ///      and nothing more: no fixture below the exercise slice ever calls it, and giving it behavior it
+    ///      does not need would make configuration evidence depend on an implementation. A fixture that
+    ///      does exercise O2 overrides this with the real router, which is why the resolution happens after
+    ///      the Hook exists.
+    function _resolveExerciseRouter() internal virtual returns (address router) {
+        router = makeAddr("exerciseRouter");
+    }
 
     /// @dev Routes a swap as an originating user, through the trusted ordinary-swap perimeter.
     function _swapAs(address _actor, SwapParams memory _params) internal returns (BalanceDelta delta) {
