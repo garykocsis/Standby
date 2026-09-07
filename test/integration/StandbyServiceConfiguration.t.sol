@@ -19,6 +19,7 @@ import {StandbyFixtureConfig} from "../../script/helpers/StandbyFixtureConfig.so
 import {EligibilityRegistry} from "../../src/EligibilityRegistry.sol";
 import {StandbyHook} from "../../src/StandbyHook.sol";
 import {IEligibilityRegistry} from "../../src/interfaces/IEligibilityRegistry.sol";
+import {ServiceDomain} from "../../src/libraries/ServiceDomain.sol";
 
 import {BaseStandbyServiceTest} from "../shared/BaseStandbyServiceTest.t.sol";
 
@@ -41,6 +42,18 @@ contract StandbyServiceConfigurationTest is BaseStandbyServiceTest {
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
+
+    /// @dev A tick spacing of one, at which a bitmap word covers only 256 ticks, so the supported
+    ///      traversal bound is reachable within an ordinary domain width.
+    int24 internal constant FINE_TICK_SPACING = 1;
+
+    /// @dev A domain whose traversal demand is exactly the supported bound: fifteen bitmap words, plus
+    ///      the one conditional step a numeric top that is not on a word edge allows for.
+    int24 internal constant EXACT_BOUND_TICK_Q = -3_484;
+    int24 internal constant EXACT_BOUND_TICK_O = 100;
+
+    /// @dev One tick lower, which moves the numeric bottom into the next word and demands one step more.
+    int24 internal constant OVER_BOUND_TICK_Q = -3_585;
 
     event ProtectedExecutionServiceActivated(
         PoolId indexed serviceId,
@@ -453,6 +466,155 @@ contract StandbyServiceConfigurationTest is BaseStandbyServiceTest {
         );
 
         _assertNoServiceConfigured(hook);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+           G3-C — PROSPECTIVE DERIVABILITY ADMISSION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Proves the canonical fixture domain is comfortably inside the supported traversal bound.
+    /// @dev The admission rule added by the F5 correction must not disturb the canonical demonstration.
+    ///      This states the canonical margin explicitly, so a later change to the bound or to the
+    ///      classifier that quietly narrowed it would be visible here rather than in an unrelated suite.
+    function test_configureAndActivate_leavesTheCanonicalDomainWellInsideTheTraversalBound() public {
+        uint256 demand = ServiceDomain.prospectiveTraversalDemand(
+            StandbyFixtureConfig.TICK_Q, StandbyFixtureConfig.TICK_O, StandbyFixtureConfig.TICK_SPACING
+        );
+
+        assertEq(demand, 3, "the canonical domain demands three traversal steps");
+        assertLt(demand, hook.MAX_PROSPECTIVE_SWAP_STEPS(), "the canonical domain must be well inside the bound");
+
+        _activateCanonicalService();
+
+        assertTrue(hook.protectedExecutionService().configured, "the canonical fixture must still activate");
+    }
+
+    /// @notice Proves a domain demanding exactly the supported bound activates.
+    /// @dev The accepting side of the boundary. A rule that rejected at the bound rather than beyond it
+    ///      would exclude configurations the realization can in fact derive.
+    function test_configureAndActivate_acceptsADomainDemandingExactlyTheSupportedBound() public {
+        PoolKey memory key = _poolKeyFor(IHooks(address(hook)), ALTERNATE_FEE, FINE_TICK_SPACING);
+        _initializePoolAtTick(key, EXACT_BOUND_TICK_O);
+
+        assertEq(
+            ServiceDomain.prospectiveTraversalDemand(EXACT_BOUND_TICK_Q, EXACT_BOUND_TICK_O, FINE_TICK_SPACING),
+            hook.MAX_PROSPECTIVE_SWAP_STEPS(),
+            "the fixture must sit exactly on the bound"
+        );
+
+        vm.prank(configurationAuthority);
+        hook.configureAndActivate(
+            key,
+            true,
+            EXACT_BOUND_TICK_Q,
+            EXACT_BOUND_TICK_O,
+            IEligibilityRegistry(address(registry)),
+            exerciseRouter,
+            establishmentAuthority
+        );
+
+        StandbyHook.ProtectedExecutionService memory service = hook.protectedExecutionService();
+
+        assertTrue(service.configured, "an exactly-bounded domain must activate");
+        assertEq(service.tickQ, EXACT_BOUND_TICK_Q, "tickQ fidelity");
+        assertEq(service.tickO, EXACT_BOUND_TICK_O, "tickO fidelity");
+    }
+
+    /// @notice Proves a domain demanding one step beyond the supported bound is rejected atomically.
+    /// @dev One tick of extra width moves the numeric bottom into the next bitmap word and pushes demand
+    ///      past the bound. Everything else about the configuration is admissible, so the rejection is
+    ///      isolating the realization-admissibility failure and nothing else, and it leaves no fragment
+    ///      of a Protected Execution Service behind.
+    function test_configureAndActivate_rejectsADomainDemandingOneStepBeyondTheBound() public {
+        PoolKey memory key = _poolKeyFor(IHooks(address(hook)), ALTERNATE_FEE, FINE_TICK_SPACING);
+        _initializePoolAtTick(key, EXACT_BOUND_TICK_O);
+
+        uint256 bound = hook.MAX_PROSPECTIVE_SWAP_STEPS();
+        uint256 demand =
+            ServiceDomain.prospectiveTraversalDemand(OVER_BOUND_TICK_Q, EXACT_BOUND_TICK_O, FINE_TICK_SPACING);
+
+        assertEq(demand, bound + 1, "the fixture must sit exactly one step beyond the bound");
+
+        vm.prank(configurationAuthority);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                StandbyHook.StandbyHook__ProspectiveTraversalDemandExceedsBound.selector, demand, bound
+            )
+        );
+        hook.configureAndActivate(
+            key,
+            true,
+            OVER_BOUND_TICK_Q,
+            EXACT_BOUND_TICK_O,
+            IEligibilityRegistry(address(registry)),
+            exerciseRouter,
+            establishmentAuthority
+        );
+
+        _assertNoServiceConfigured(hook);
+    }
+
+    /// @notice Proves an over-bound rejection is rejected for both protected directions.
+    /// @dev The numeric domain is what determines traversal demand, because ordinary swaps run in both
+    ///      directions on any service. A rule that only looked along the protected direction would let
+    ///      the same unsupported geometry through under the other label.
+    function test_configureAndActivate_rejectsAnOverBoundDomainInEitherProtectedDirection() public {
+        PoolKey memory key = _poolKeyFor(IHooks(address(hook)), ALTERNATE_FEE, FINE_TICK_SPACING);
+        _initializePoolAtTick(key, EXACT_BOUND_TICK_O);
+
+        uint256 bound = hook.MAX_PROSPECTIVE_SWAP_STEPS();
+        uint256 demand =
+            ServiceDomain.prospectiveTraversalDemand(EXACT_BOUND_TICK_O, OVER_BOUND_TICK_Q, FINE_TICK_SPACING);
+
+        vm.prank(configurationAuthority);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                StandbyHook.StandbyHook__ProspectiveTraversalDemandExceedsBound.selector, demand, bound
+            )
+        );
+        hook.configureAndActivate(
+            key,
+            false,
+            EXACT_BOUND_TICK_O,
+            OVER_BOUND_TICK_Q,
+            IEligibilityRegistry(address(registry)),
+            exerciseRouter,
+            establishmentAuthority
+        );
+
+        _assertNoServiceConfigured(hook);
+    }
+
+    /// @notice Proves a rejected over-bound attempt leaves the Hook able to activate a valid service.
+    /// @dev Atomicity is not only about persisting nothing; the one-shot activation right must survive a
+    ///      rejected attempt intact. If the failed attempt had consumed it, the correction would have
+    ///      turned a recoverable misconfiguration into a permanently inert Hook.
+    function test_configureAndActivate_stillAcceptsTheCanonicalServiceAfterAnOverBoundRejection() public {
+        PoolKey memory overBoundKey = _poolKeyFor(IHooks(address(hook)), ALTERNATE_FEE, FINE_TICK_SPACING);
+        _initializePoolAtTick(overBoundKey, EXACT_BOUND_TICK_O);
+
+        vm.prank(configurationAuthority);
+        try hook.configureAndActivate(
+            overBoundKey,
+            true,
+            OVER_BOUND_TICK_Q,
+            EXACT_BOUND_TICK_O,
+            IEligibilityRegistry(address(registry)),
+            exerciseRouter,
+            establishmentAuthority
+        ) returns (PoolId) {
+            assertTrue(false, "an over-bound domain must not activate");
+        } catch {}
+
+        _assertNoServiceConfigured(hook);
+
+        _activateCanonicalService();
+
+        StandbyHook.ProtectedExecutionService memory service = hook.protectedExecutionService();
+
+        assertTrue(service.configured, "the canonical service must still be activatable afterwards");
+        assertEq(service.tickQ, StandbyFixtureConfig.TICK_Q, "the canonical tickQ must be the persisted one");
+        assertEq(service.tickO, StandbyFixtureConfig.TICK_O, "the canonical tickO must be the persisted one");
     }
 
     /// @notice Proves a boundary misaligned to the authoritative pool tick spacing is rejected.

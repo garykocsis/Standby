@@ -1,7 +1,8 @@
 ## Standby — Implementation Plan
 
 **Status:** FINAL PASS / FROZEN
-**Amendments:** 2026-09-05 — §10.11 G5-C clarified to require heterogeneous currency-decimal generalization and prohibit production dependence on the canonical 6-decimal fixture. This is a verification-strengthening clarification and does not alter frozen protocol semantics.
+**Amendments:** 2026-09-05 — §10.11 G5-C clarified to require heterogeneous currency-decimal generalization and prohibit production dependence on the canonical 6-decimal fixture. This is a verification-strengthening clarification and does not alter frozen protocol semantics.  
+2026-09-06 — F5 real-PoolManager differential verification corrected the Uniswap v4 prospective-swap realization: no-interior initialized liquidity boundaries do not imply single-step `computeSwapStep` execution because tick-bitmap word boundaries may require multiple arithmetic steps. The plan now requires exact bounded prospective traversal plus admission-time validation that an immutable PES domain lies within the supported traversal bound. This is a Uniswap v4 realization correction and does not alter frozen Standby economics.
 **Project:** Standby  
 **Tagline:** _Execution capacity when you need it._  
 **Technical descriptor:** Protocol-enforced future execution capacity from shared AMM liquidity.
@@ -535,6 +536,8 @@ Before persistence:
 - require configured PoolKey points to this Hook,
 - validate structural pool facts,
 - validate ticks/domain form,
+- derive the maximum prospective swap traversal demand implied by the proposed immutable service domain and PoolKey tick spacing,
+- require that traversal demand does not exceed the F5 reference realization's supported prospective-swap traversal bound,
 - require nonzero registry,
 - require explicit trusted ordinary-swap and liquidity periphery roles,
 - require explicit designated ExerciseRouter / O2 coordinator,
@@ -577,6 +580,8 @@ Prove:
 - exact Pool identity,
 - registry fixed,
 - domain/direction fixed,
+- every activated domain satisfies the supported prospective-swap derivability bound,
+- an over-bound domain rejects atomically before service persistence,
 - trusted ordinary-swap/liquidity periphery roles remain distinct,
 - designated ExerciseRouter/O2 coordinator is explicitly fixed and distinct from ordinary periphery trust,
 - commitment-establishment authority remains distinct,
@@ -798,6 +803,33 @@ Separate transition-specific helpers are preferred where clearer:
 - prospective liquidity-removal S′,
 - topology/domain checks.
 
+For prospective swaps, the production derivation must reproduce the
+economically relevant Uniswap v4 swap-loop semantics required to obtain
+the exact prospective state. No-interior initialized liquidity
+boundaries guarantee stable active liquidity across the service-domain
+interior; they do not imply a single `SwapMath.computeSwapStep`, because
+uninitialized tick-bitmap word boundaries may divide execution into
+multiple arithmetic steps.
+
+The reference realization keeps prospective swap traversal bounded. Let:
+
+- `D` be the maximum prospective traversal demand implied by the proposed
+  immutable service domain and PoolKey tick spacing under the supported
+  v4 traversal semantics;
+- `M` be the implementation's supported maximum prospective swap-step
+  count.
+
+PES activation requires:
+
+```text
+D <= M
+```
+
+A configuration with `D > M` must reject before activation. The runtime
+step-bound revert remains defensive fail-closed protection and must not
+serve as the normal discovery mechanism for an unsupported domain that
+was already admitted.
+
 Liquidity removal must account for whether the removed liquidity is active at the current tick.
 
 ## 10.6 Service-domain / topology library
@@ -814,6 +846,8 @@ It must not own:
 - final revert policy.
 
 Liquidity introduction may not introduce an initialized liquidity boundary strictly inside the configured service domain. Equality at configured boundaries is permitted where frozen semantics allow it.
+
+`ServiceDomain` may also own the pure derivation/classification of prospective traversal demand from service geometry and tick spacing. It does not own the supported traversal limit or the activation decision. `StandbyHook` applies the realization's bound during `configureAndActivate` before authoritative PES persistence.
 
 ## 10.7 Read-only observability
 
@@ -851,7 +885,27 @@ For prospective transition helpers:
 1. derive predicted prospective v4 state/S′,
 2. execute the same transition against real PoolManager where allowed,
 3. compare actual post-state to prediction,
-4. compare predicted S′ to authoritative S derived from actual post-state.
+4. compare predicted S′ to authoritative S derived from actual post-state,
+5. include paths that cross uninitialized tick-bitmap word boundaries,
+6. prove the admission-time traversal-demand classifier is sufficient for
+   the production traversal bound.
+
+Traversal-bound verification must include at minimum:
+
+- a configuration whose maximum demand is exactly `M` and activates,
+- a configuration whose maximum demand exceeds `M` and rejects before
+  activation,
+- both protected directions,
+- positive and negative tick regions,
+- bitmap-word-aligned boundary cases,
+- atomic rejection with no partial PES persistence,
+- canonical fixture activation unchanged.
+
+For every configuration accepted by the derivability check, real-PoolManager
+differential evidence must establish that supported domain-extreme swap
+paths remain within the production traversal bound. The runtime
+prospective-step-bound revert is retained as defensive fail-closed
+protection.
 
 ## 10.11 G5-C — fixture generalization
 
@@ -868,9 +922,49 @@ Supporting Capacity and the corresponding Capacity Obligation MUST be represente
 
 Generalization evidence MUST verify that authoritative derivation remains equivalent to the independent reference derivation across the exercised currency-decimal configuration.
 
-## 10.12 G5 statement
+## 10.12 G5-D — production derivation singularity
 
-> Every economically meaningful quantity/classification used by later transitions equals its normative derivation from authoritative facts, and every prospective-state derivation used for pre-transition enforcement equals the state real v4 execution would produce for the same transition.
+Structural review must establish exactly one production derivation path
+for validity, temporal exercise qualification, permanent non-binding
+classification, commitment obligation, Aggregate Capacity Obligation,
+and Supporting Capacity. Public reads, prospective helpers, and later
+enforcement must consume those derivations rather than reconstructing
+competing formulas.
+
+## 10.13 G5-E — semantic minimality / downstream non-contamination
+
+F5 must introduce no O1 commitment establishment, O2 authorization or
+fulfillment behavior, O3 callback transition authorization, registry
+mutation, participant authentication, administrative release,
+pause/deactivation behavior, lifecycle persistence, or derived economic
+storage.
+
+## 10.14 G5-F — invalid-basis / bounded-derivability correctness
+
+Prove that invalid service geometry, invalid direction-relative boundary
+ordering, current state outside the service domain, invalid arithmetic
+ordering, or unsupported prospective traversal demand cannot yield a
+plausible authoritative Supporting Capacity or prospective state.
+
+Verification must distinguish:
+
+```text
+S == 0
+```
+
+from:
+
+```text
+S is not authoritatively derivable because the realization basis is invalid
+```
+
+and must prove that unsupported immutable traversal demand is rejected at
+PES activation rather than first discovered during ordinary supported
+runtime operation.
+
+## 10.15 G5 statement
+
+> Every economically meaningful quantity/classification used by later transitions equals its normative derivation from authoritative facts, every prospective-state derivation used for pre-transition enforcement equals the state real v4 execution would produce for the same transition, and every activated PES lies within the bounded derivation domain required to make those authoritative prospective derivations available.
 
 ---
 

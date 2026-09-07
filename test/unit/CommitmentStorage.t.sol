@@ -411,22 +411,28 @@ contract CommitmentStorageTest is BaseCommitmentStorageTest {
         }
     }
 
-    /// @notice Proves neither the production Hook nor the harness exposes a derived economic read.
-    /// @dev F4 persists facts and reports facts. Validity, exercisability, binding status, reclaimability,
-    ///      per-commitment obligation, Aggregate Capacity Obligation, and Supporting Capacity are derived
-    ///      quantities owned by the derivation slice, and exposing any of them here would create a second
-    ///      production implementation of an economic derivation.
-    function test_noDerivedEconomicReadIsExposed() public {
-        string[] memory forbiddenSignatures = new string[](9);
+    /// @notice Proves the storage layer still exposes no commitment lifecycle projection.
+    /// @dev The original F4 form of this test forbade every derived economic read, because at F4 no
+    ///      derivation existed and any such read would have been a second production implementation of
+    ///      economics that had no first one. F5 supplied the authoritative derivation kernel together with
+    ///      the frozen minimum read surface — `supportingCapacity()`, `aggregateObligation()`, and
+    ///      `commitmentObligation(id)` — so those three are now authorized production reads and are
+    ///      verified by the derivation suites.
+    ///
+    ///      What remains forbidden is the convenience lifecycle API. A commitment has no status: validity,
+    ///      exercisability, binding, reclaimability, and liveness are distinct derived properties over
+    ///      distinct authoritative bases, and publishing them as a projection would invite exactly the
+    ///      substitution — non-exercisable read as non-binding — that the state model forbids. Nothing
+    ///      currently requires them, so nothing exposes them.
+    function test_noCommitmentLifecycleProjectionIsExposed() public {
+        string[] memory forbiddenSignatures = new string[](7);
         forbiddenSignatures[0] = "isValid(uint256)";
         forbiddenSignatures[1] = "isExercisable(uint256)";
         forbiddenSignatures[2] = "isBinding(uint256)";
         forbiddenSignatures[3] = "isReclaimable(uint256)";
         forbiddenSignatures[4] = "isLive(uint256)";
-        forbiddenSignatures[5] = "commitmentObligation(uint256)";
-        forbiddenSignatures[6] = "aggregateObligation()";
-        forbiddenSignatures[7] = "supportingCapacity()";
-        forbiddenSignatures[8] = "availableCapacity()";
+        forbiddenSignatures[5] = "status(uint256)";
+        forbiddenSignatures[6] = "availableCapacity()";
 
         for (uint256 i = 0; i < forbiddenSignatures.length; ++i) {
             bytes memory callData = abi.encodeWithSignature(forbiddenSignatures[i], uint256(1));

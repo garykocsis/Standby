@@ -9,14 +9,25 @@ import {BaseHook} from "v4-hooks-public/src/base/BaseHook.sol";
 
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
+import {LiquidityMath} from "v4-core/libraries/LiquidityMath.sol";
 import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
+import {ProtocolFeeLibrary} from "v4-core/libraries/ProtocolFeeLibrary.sol";
+import {SafeCast} from "v4-core/libraries/SafeCast.sol";
 import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
+import {SwapMath} from "v4-core/libraries/SwapMath.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
+import {ModifyLiquidityParams, SwapParams} from "v4-core/types/PoolOperation.sol";
 
 import {IEligibilityRegistry} from "./interfaces/IEligibilityRegistry.sol";
-import {CommitmentRefs, MAX_LIVE_COMMITMENTS as BOUNDED_REFERENCE_SLOTS} from "./libraries/CommitmentRefs.sol";
+import {
+    CommitmentRefs,
+    EMPTY_REFERENCE,
+    MAX_LIVE_COMMITMENTS as BOUNDED_REFERENCE_SLOTS
+} from "./libraries/CommitmentRefs.sol";
+import {ServiceDomain} from "./libraries/ServiceDomain.sol";
+import {StandbyMath} from "./libraries/StandbyMath.sol";
 
 /*//////////////////////////////////////////////////////////////
                              CONTRACTS
@@ -24,12 +35,21 @@ import {CommitmentRefs, MAX_LIVE_COMMITMENTS as BOUNDED_REFERENCE_SLOTS} from ".
 
 /// @title StandbyHook
 /// @notice The Standby Uniswap v4 Hook.
-/// @dev At implementation slice F4 this contract owns the Hook-wide immutable trust basis, one one-shot
-///      Protected Execution Service configuration, and the authoritative commitment record store with its
-///      bounded enforcement-reference index. It does not yet own economic derivation, commitment
-///      admission, exercise, or O3 enforcement, so the four enabled callbacks still fail closed with
-///      `HookNotImplemented` until their owning implementation slices supply authoritative behavior, and
-///      no production path can create a commitment.
+/// @dev At implementation slice F5 this contract owns the Hook-wide immutable trust basis, one one-shot
+///      Protected Execution Service configuration, the authoritative commitment record store with its
+///      bounded enforcement-reference index, and the composition of the authoritative economic derivation
+///      kernel. It does not yet own commitment admission, exercise, or O3 enforcement, so the four enabled
+///      callbacks still fail closed with `HookNotImplemented` until their owning implementation slices
+///      supply authoritative behavior, and no production path can create a commitment.
+///
+///      The derivation kernel is composition, not a second economics. The Hook is where authoritative
+///      inputs meet economic consequence: it reads PoolManager state, the immutable service basis, the
+///      persisted commitment facts, the bounded references, and the current time, and passes them through
+///      the pure kernel in `StandbyMath` and `ServiceDomain`. Every production consumer of an F5 quantity
+///      — the read surface today, enforcement later — resolves through these same functions, so no
+///      economic meaning is ever expressed twice in production. None of it is persisted: Supporting
+///      Capacity, Capacity Obligation, validity, and every other derived classification are recomputed
+///      from authoritative facts on each use.
 ///
 ///      Trust is separated by ownership scope, following `uniswap-v4-realization.md` RR-STATE-2 and
 ///      RR-STATE-3:
@@ -48,6 +68,9 @@ contract StandbyHook is BaseHook {
     using CommitmentRefs for uint256[BOUNDED_REFERENCE_SLOTS];
     using LPFeeLibrary for uint24;
     using PoolIdLibrary for PoolKey;
+    using ProtocolFeeLibrary for uint16;
+    using ProtocolFeeLibrary for uint24;
+    using SafeCast for uint256;
     using StateLibrary for IPoolManager;
 
     /*//////////////////////////////////////////////////////////////
@@ -120,6 +143,32 @@ contract StandbyHook is BaseHook {
         uint128 remainingEntitlement;
     }
 
+    /// @dev The working state of one prospective swap derivation.
+    /// @param poolId The service pool the derivation reads.
+    /// @param tickSpacing The authoritative pool tick spacing.
+    /// @param zeroForOne The proposed swap direction.
+    /// @param exactOutput Whether the proposed swap specifies its output rather than its input.
+    /// @param sqrtPriceLimitX96 The proposed square-root price limit.
+    /// @param swapFee The effective swap fee, in pips, including any protocol fee.
+    /// @param amountRemaining The input or output amount still to be swapped.
+    /// @param sqrtPriceX96 The square-root price reached so far.
+    /// @param tick The tick reached so far, under v4's own post-step tick convention.
+    /// @param liquidity The active liquidity reached so far.
+    /// @param steps The number of swap steps traversed so far.
+    struct SwapDerivation {
+        PoolId poolId;
+        int24 tickSpacing;
+        bool zeroForOne;
+        bool exactOutput;
+        uint160 sqrtPriceLimitX96;
+        uint24 swapFee;
+        int256 amountRemaining;
+        uint160 sqrtPriceX96;
+        int24 tick;
+        uint128 liquidity;
+        uint256 steps;
+    }
+
     /*//////////////////////////////////////////////////////////////
                            STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
@@ -131,6 +180,17 @@ contract StandbyHook is BaseHook {
     ///      commitments a service may have over its lifetime: historical records are permanent and
     ///      unbounded, and slots are reused.
     uint256 public constant MAX_LIVE_COMMITMENTS = BOUNDED_REFERENCE_SLOTS;
+
+    /// @notice The bound on the swap-step traversal a prospective swap derivation may perform.
+    /// @dev A prospective swap derivation reproduces the Uniswap v4 swap loop, which advances one step
+    ///      per candidate target the tick bitmap yields. Inside the configured service domain the frozen
+    ///      topology admits no initialized liquidity boundary, so the only extra steps come from tick
+    ///      bitmap word edges, and a supported transition needs very few of them.
+    ///
+    ///      This is a bounded-execution realization constant, not an economic quantity. A derivation that
+    ///      would exceed it is refused rather than truncated, because a truncated traversal would report
+    ///      a prospective state the pool would never actually reach.
+    uint256 public constant MAX_PROSPECTIVE_SWAP_STEPS = 16;
 
     /// @notice The only account authorized to configure and activate the Protected Execution Service.
     /// @dev Semantically distinct from commitment-establishment authority, exercise authority,
@@ -282,6 +342,47 @@ contract StandbyHook is BaseHook {
     /// @param slot The slot that already holds it.
     error StandbyHook__DuplicateEnforcementReference(uint256 commitmentId, uint256 slot);
 
+    /// @notice Thrown when a predicted post-transition price would leave the closed service domain.
+    /// @dev Distinct from `StandbyHook__CurrentPriceOutsideServiceDomain`, which reports that the
+    ///      authoritative present state is already an invalid derivation basis. This one reports that a
+    ///      proposed transition would take the pool out of the configured realization domain, which is a
+    ///      fact about the transition rather than about the present.
+    /// @param sqrtPriceX96 The predicted post-transition square-root price.
+    /// @param sqrtLowerX96 The square-root price of the numerically lower service boundary.
+    /// @param sqrtUpperX96 The square-root price of the numerically upper service boundary.
+    error StandbyHook__ProspectivePriceOutsideServiceDomain(
+        uint160 sqrtPriceX96, uint160 sqrtLowerX96, uint160 sqrtUpperX96
+    );
+
+    /// @notice Thrown when a proposed swap violates the price-limit conditions Uniswap v4 itself imposes.
+    /// @dev The prospective derivation reproduces v4's own entry conditions so that it never predicts a
+    ///      state for a swap the PoolManager would reject outright.
+    /// @param zeroForOne The proposed swap direction.
+    /// @param sqrtPriceX96 The authoritative current square-root price.
+    /// @param sqrtPriceLimitX96 The proposed square-root price limit.
+    error StandbyHook__UnsupportedSwapPriceLimit(bool zeroForOne, uint160 sqrtPriceX96, uint160 sqrtPriceLimitX96);
+
+    /// @notice Thrown when a prospective swap derivation would exceed the bounded step traversal.
+    /// @dev Defensive fail-closed protection only. Activation refuses any service whose own domain could
+    ///      reach this, so an activated service can encounter it only on a path that has already left the
+    ///      configured domain — a path no supported Standby operation takes.
+    /// @param steps The bound that was reached.
+    error StandbyHook__ProspectiveSwapStepBoundExceeded(uint256 steps);
+
+    /// @notice Thrown when a proposed service domain could not be prospectively derived within the bound.
+    /// @dev A realization-admissibility failure, and deliberately nothing else. It does not mean the
+    ///      proposed service would be unbacked, would have zero Supporting Capacity, or would carry an
+    ///      invalid commitment state; it means this reference realization cannot authoritatively evaluate
+    ///      prospective transitions across a domain that wide at that tick spacing, so it refuses to
+    ///      activate a service it could not later enforce.
+    /// @param demand The traversal demand the proposed immutable domain implies.
+    /// @param bound The supported traversal bound.
+    error StandbyHook__ProspectiveTraversalDemandExceedsBound(uint256 demand, uint256 bound);
+
+    /// @notice Thrown when a liquidity-removal derivation is asked about a non-removal.
+    /// @param liquidityDelta The proposed liquidity delta.
+    error StandbyHook__NotALiquidityRemoval(int256 liquidityDelta);
+
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -372,6 +473,8 @@ contract StandbyHook is BaseHook {
 
         _validateServiceDomain(_poolKey.tickSpacing, _protectedZeroForOne, _tickQ, _tickO, sqrtPriceX96);
 
+        _validateProspectiveDerivability(_tickQ, _tickO, _poolKey.tickSpacing);
+
         if (address(_registry) == address(0)) revert StandbyHook__InvalidEligibilityRegistry();
         if (_exerciseRouter == address(0)) revert StandbyHook__InvalidExerciseRouter();
         if (_establishmentAuthority == address(0)) revert StandbyHook__InvalidEstablishmentAuthority();
@@ -416,9 +519,7 @@ contract StandbyHook is BaseHook {
     function serviceId() external view returns (PoolId poolId) {
         if (!_service.configured) revert StandbyHook__ServiceNotConfigured();
 
-        PoolKey memory key = _service.poolKey;
-
-        poolId = key.toId();
+        poolId = _serviceId();
     }
 
     /// @notice Returns the complete authoritative fact record of a historical commitment.
@@ -455,6 +556,82 @@ contract StandbyHook is BaseHook {
     /// @return references The bounded enforcement-reference index, slot by slot.
     function enforcementReferences() external view returns (uint256[BOUNDED_REFERENCE_SLOTS] memory references) {
         references = _enforcementRefs;
+    }
+
+    /// @notice Returns current Supporting Capacity, in raw units of the protected output currency.
+    /// @dev Derived from authoritative PoolManager state and the immutable service configuration on every
+    ///      call; nothing about it is stored. This read is not a separate observability formula: it
+    ///      resolves through the same derivation later enforcement must use, so a value shown here and a
+    ///      value enforced against can never disagree.
+    ///
+    ///      Reverts when the authoritative current price lies outside the closed service domain. That is
+    ///      not zero capacity — it is a state for which no authoritative Standby Supporting Capacity
+    ///      exists, and reporting zero would present an invalid derivation basis as an ordinary economic
+    ///      fact.
+    /// @return capacity The current Supporting Capacity.
+    function supportingCapacity() external view returns (uint256 capacity) {
+        capacity = _supportingCapacity();
+    }
+
+    /// @notice Returns the current Aggregate Capacity Obligation of the service.
+    /// @dev The bounded sum of the current Capacity Obligation of every commitment the enforcement-
+    ///      reference index points at. It is derived on every call and never cached, so a commitment that
+    ///      has expired or been fulfilled stops contributing without any transaction being sent to notice.
+    ///
+    ///      Reference membership carries no economic meaning: a stale reference to a terminal commitment
+    ///      contributes exactly zero, and slot order cannot change the sum.
+    /// @return obligation The Aggregate Capacity Obligation, in raw units of the protected output currency.
+    function aggregateObligation() external view returns (uint256 obligation) {
+        obligation = _aggregateObligation();
+    }
+
+    /// @notice Returns the current Capacity Obligation of one commitment.
+    /// @dev Binding is not exercisability. A commitment whose window has not opened, or whose Beneficiary
+    ///      is currently ineligible, still imposes its full Remaining Entitlement; only exhaustion or
+    ///      expiry releases it.
+    /// @param _commitmentId The identity to derive.
+    /// @return obligation The Capacity Obligation, in raw units of the protected output currency.
+    function commitmentObligation(uint256 _commitmentId) external view returns (uint256 obligation) {
+        if (!_commitmentExists(_commitmentId)) revert StandbyHook__CommitmentDoesNotExist(_commitmentId);
+
+        obligation = _commitmentObligation(_commitmentId);
+    }
+
+    /// @notice Previews the Supporting Capacity a proposed swap would leave behind.
+    /// @dev Diagnostic surface over an already-authoritative derivation. It introduces no economic
+    ///      semantics of its own, duplicates no arithmetic, and is never a precondition for anything: it
+    ///      calls the same prospective-state derivation that pre-transition enforcement will call, so a
+    ///      preview and an enforcement decision are the same computation.
+    ///
+    ///      The prospective state is derived by reproducing the supported Uniswap v4 swap semantics from
+    ///      the exact current state, not by subtracting an estimated amount from present capacity.
+    /// @param _params The proposed swap.
+    /// @return capacity The Supporting Capacity of the predicted post-swap state.
+    function prospectiveSupportingCapacityAfterSwap(SwapParams calldata _params)
+        external
+        view
+        returns (uint256 capacity)
+    {
+        (uint160 sqrtPriceX96, uint128 liquidity) = _prospectiveSwapState(_params);
+
+        capacity = _prospectiveSupportingCapacity(sqrtPriceX96, liquidity);
+    }
+
+    /// @notice Previews the Supporting Capacity a proposed liquidity removal would leave behind.
+    /// @dev As with the swap preview, this exposes the authoritative derivation rather than a second one.
+    ///      A removal cannot move the square-root price, so the whole question is whether the removed
+    ///      range is active at the current tick; capacity is then recomputed from the prospective
+    ///      liquidity rather than approximated as a token amount.
+    /// @param _params The proposed liquidity modification, whose liquidity delta must be a removal.
+    /// @return capacity The Supporting Capacity of the predicted post-removal state.
+    function prospectiveSupportingCapacityAfterLiquidityRemoval(ModifyLiquidityParams calldata _params)
+        external
+        view
+        returns (uint256 capacity)
+    {
+        (uint160 sqrtPriceX96, uint128 liquidity) = _prospectiveLiquidityRemovalState(_params);
+
+        capacity = _prospectiveSupportingCapacity(sqrtPriceX96, liquidity);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -559,6 +736,313 @@ contract StandbyHook is BaseHook {
         exists = _commitmentId != 0 && _commitmentId < _nextCommitmentId;
     }
 
+    /// @dev Derives the service identity from the persisted PoolKey.
+    ///
+    ///      PoolId is never persisted independently, so every consumer that needs it reconstructs it from
+    ///      the one authoritative key. Callers are responsible for having established that a service
+    ///      exists; an unconfigured Hook would reconstruct the identity of a zero-valued key.
+    function _serviceId() internal view returns (PoolId poolId) {
+        PoolKey memory key = _service.poolKey;
+
+        poolId = key.toId();
+    }
+
+    /// @dev Reads the complete authoritative pool state the capacity derivations consume.
+    ///
+    ///      The square-root price is taken directly from Slot0 (RR-SC-4). It is deliberately never
+    ///      reconstructed from the current tick: a tick identifies the interval a price sits in, not the
+    ///      price, so reconstructing it would silently round the derivation basis. The tick is read for
+    ///      what it is actually authoritative about — which liquidity ranges are active, and where the
+    ///      next swap step begins.
+    function _currentPoolState()
+        internal
+        view
+        returns (PoolId poolId, uint160 sqrtPriceX96, int24 tick, uint128 liquidity)
+    {
+        if (!_service.configured) revert StandbyHook__ServiceNotConfigured();
+
+        poolId = _serviceId();
+
+        (sqrtPriceX96, tick,,) = poolManager.getSlot0(poolId);
+
+        liquidity = poolManager.getLiquidity(poolId);
+    }
+
+    /// @dev Derives current Supporting Capacity from the authoritative present pool state.
+    ///
+    ///      The present state must lie inside the closed service domain for an authoritative Standby
+    ///      capacity to exist at all. A present state outside it is refused rather than reported as zero,
+    ///      because those are different facts: zero capacity at `P_Q` is an ordinary valid state, whereas
+    ///      a price outside the domain means the derivation basis itself has already been violated.
+    function _supportingCapacity() internal view returns (uint256 capacity) {
+        (, uint160 sqrtPriceX96,, uint128 liquidity) = _currentPoolState();
+
+        (uint160 sqrtLowerX96, uint160 sqrtUpperX96) = ServiceDomain.sqrtBounds(_service.tickQ, _service.tickO);
+
+        if (!ServiceDomain.containsPrice(sqrtPriceX96, sqrtLowerX96, sqrtUpperX96)) {
+            revert StandbyHook__CurrentPriceOutsideServiceDomain(sqrtPriceX96, sqrtLowerX96, sqrtUpperX96);
+        }
+
+        capacity = _supportingCapacityFromState(sqrtPriceX96, liquidity);
+    }
+
+    /// @dev Derives Supporting Capacity from a predicted post-transition state.
+    ///
+    ///      There is no separate prospective capacity formula. A prospective state is derived first, and
+    ///      then measured by exactly the same kernel that measures the present, which is what makes a
+    ///      prediction comparable with the capacity the pool actually reports afterwards.
+    function _prospectiveSupportingCapacity(uint160 _sqrtPriceX96, uint128 _liquidity)
+        internal
+        view
+        returns (uint256 capacity)
+    {
+        (uint160 sqrtLowerX96, uint160 sqrtUpperX96) = ServiceDomain.sqrtBounds(_service.tickQ, _service.tickO);
+
+        if (!ServiceDomain.containsPrice(_sqrtPriceX96, sqrtLowerX96, sqrtUpperX96)) {
+            revert StandbyHook__ProspectivePriceOutsideServiceDomain(_sqrtPriceX96, sqrtLowerX96, sqrtUpperX96);
+        }
+
+        capacity = _supportingCapacityFromState(_sqrtPriceX96, _liquidity);
+    }
+
+    /// @dev The single composition point between authoritative pool state and the capacity kernel.
+    ///
+    ///      `sqrtQ` is derived from the persisted canonical boundary tick rather than persisted itself
+    ///      (RR-SC-3), and the protected direction — never currency identity or decimals — selects which
+    ///      currency the result is denominated in.
+    function _supportingCapacityFromState(uint160 _sqrtPriceX96, uint128 _liquidity)
+        internal
+        view
+        returns (uint256 capacity)
+    {
+        capacity = StandbyMath.supportingCapacity(
+            _service.protectedZeroForOne, _sqrtPriceX96, TickMath.getSqrtPriceAtTick(_service.tickQ), _liquidity
+        );
+    }
+
+    /// @dev Derives the current Capacity Obligation of an existing commitment.
+    ///
+    ///      Only two authoritative facts participate: Remaining Entitlement and temporal validity.
+    ///      Eligibility, exercise authority, and the exercise window are deliberately not inputs, because
+    ///      none of them can release backing.
+    function _commitmentObligation(uint256 _commitmentId) internal view returns (uint256 obligation) {
+        Commitment storage record = _commitments[_commitmentId];
+
+        obligation = StandbyMath.commitmentObligation(record.remainingEntitlement, record.validUntil, block.timestamp);
+    }
+
+    /// @dev Derives Aggregate Capacity Obligation over the bounded enforcement-reference index.
+    ///
+    ///      The scan is bounded by construction and its cost does not grow with commitment history. Each
+    ///      nonzero reference resolves to a historical record whose obligation is derived through the one
+    ///      kernel; empty slots and terminal commitments contribute nothing, so a stale reference costs a
+    ///      read and no economics. Addition is checked, and the sum of at most `MAX_LIVE_COMMITMENTS`
+    ///      `uint128` remainders cannot approach the bound in any case.
+    ///
+    ///      Nothing about the sum depends on slot order.
+    function _aggregateObligation() internal view returns (uint256 obligation) {
+        uint256 timestamp = block.timestamp;
+
+        for (uint256 slot = 0; slot < MAX_LIVE_COMMITMENTS; ++slot) {
+            uint256 commitmentId = _enforcementRefs[slot];
+
+            if (commitmentId == EMPTY_REFERENCE) continue;
+
+            Commitment storage record = _commitments[commitmentId];
+
+            obligation += StandbyMath.commitmentObligation(record.remainingEntitlement, record.validUntil, timestamp);
+        }
+    }
+
+    /// @dev Derives the pool state a proposed swap would leave behind.
+    ///
+    ///      The derivation reproduces the supported Uniswap v4 swap semantics from the exact current
+    ///      state rather than estimating a price impact: the same `SwapMath.computeSwapStep`, the same
+    ///      effective swap fee including any protocol fee, the same step targets the tick bitmap yields,
+    ///      the same tick transitions, and the same loop termination. Reproducing the step traversal is
+    ///      not incidental — v4 splits a swap at tick bitmap word edges even where no liquidity boundary
+    ///      exists, and a single-step approximation would disagree with real execution by the rounding of
+    ///      every skipped step.
+    ///
+    ///      Two v4 behaviors are consumed as configured facts rather than reproduced. The LP fee is read
+    ///      from authoritative Slot0, which is the effective fee under the realization's static-fee model
+    ///      and this Hook's absence of any fee override. Custom accounting is structurally excluded,
+    ///      because the Hook declares no return-delta permission.
+    ///
+    ///      v4's own price-limit entry conditions are reproduced too, so the derivation never predicts a
+    ///      state for a swap the PoolManager would have rejected outright.
+    /// @param _params The proposed swap.
+    /// @return sqrtPriceX96 The predicted post-swap square-root price.
+    /// @return liquidity The predicted post-swap active liquidity.
+    function _prospectiveSwapState(SwapParams calldata _params)
+        internal
+        view
+        returns (uint160 sqrtPriceX96, uint128 liquidity)
+    {
+        SwapDerivation memory derivation = _beginSwapDerivation(_params);
+
+        while (derivation.amountRemaining != 0 && derivation.sqrtPriceX96 != derivation.sqrtPriceLimitX96) {
+            _advanceSwapDerivation(derivation);
+        }
+
+        (sqrtPriceX96, liquidity) = (derivation.sqrtPriceX96, derivation.liquidity);
+    }
+
+    /// @dev Loads the authoritative starting point of a prospective swap derivation.
+    ///
+    ///      The effective swap fee is composed exactly as the pool composes it: the LP fee alone when no
+    ///      protocol fee is set for this direction, and the pinned combination of the two otherwise. A
+    ///      zero-amount swap is short-circuited before the price-limit conditions are reproduced, because
+    ///      the pool short-circuits it there too.
+    function _beginSwapDerivation(SwapParams calldata _params)
+        internal
+        view
+        returns (SwapDerivation memory derivation)
+    {
+        if (!_service.configured) revert StandbyHook__ServiceNotConfigured();
+
+        derivation.poolId = _serviceId();
+        derivation.tickSpacing = _service.poolKey.tickSpacing;
+        derivation.zeroForOne = _params.zeroForOne;
+        derivation.exactOutput = _params.amountSpecified > 0;
+        derivation.sqrtPriceLimitX96 = _params.sqrtPriceLimitX96;
+
+        uint24 protocolFee;
+        uint24 lpFee;
+
+        (derivation.sqrtPriceX96, derivation.tick, protocolFee, lpFee) = poolManager.getSlot0(derivation.poolId);
+
+        uint16 directedProtocolFee =
+            _params.zeroForOne ? protocolFee.getZeroForOneFee() : protocolFee.getOneForZeroFee();
+
+        derivation.swapFee = directedProtocolFee == 0 ? lpFee : directedProtocolFee.calculateSwapFee(lpFee);
+
+        derivation.liquidity = poolManager.getLiquidity(derivation.poolId);
+
+        if (_params.amountSpecified == 0) return derivation;
+
+        _requireSupportedSwapPriceLimit(_params.zeroForOne, derivation.sqrtPriceX96, _params.sqrtPriceLimitX96);
+
+        derivation.amountRemaining = _params.amountSpecified;
+    }
+
+    /// @dev Advances a prospective swap derivation by exactly one Uniswap v4 swap step.
+    ///
+    ///      Every effect of the pinned loop body that can influence the final price or active liquidity is
+    ///      reproduced here: the step arithmetic, the amount bookkeeping that decides whether the loop
+    ///      continues, the tick transition across an initialized boundary, and v4's own post-step tick
+    ///      convention — including the preemptive decrement on a downward crossing, which determines
+    ///      which bitmap word the next step consults.
+    ///
+    ///      Fee growth and protocol-fee accrual are deliberately not reproduced: they change what LPs and
+    ///      the protocol are owed, not the price or the active liquidity, and Supporting Capacity depends
+    ///      only on the latter.
+    function _advanceSwapDerivation(SwapDerivation memory _derivation) internal view {
+        if (_derivation.steps == MAX_PROSPECTIVE_SWAP_STEPS) {
+            revert StandbyHook__ProspectiveSwapStepBoundExceeded(MAX_PROSPECTIVE_SWAP_STEPS);
+        }
+
+        ++_derivation.steps;
+
+        uint160 sqrtPriceStartX96 = _derivation.sqrtPriceX96;
+
+        (int24 tickNext, bool initialized) =
+            _nextSwapTargetTick(_derivation.poolId, _derivation.tick, _derivation.tickSpacing, _derivation.zeroForOne);
+
+        uint160 sqrtPriceNextX96 = TickMath.getSqrtPriceAtTick(tickNext);
+
+        {
+            uint256 amountIn;
+            uint256 amountOut;
+            uint256 feeAmount;
+
+            (_derivation.sqrtPriceX96, amountIn, amountOut, feeAmount) = SwapMath.computeSwapStep(
+                _derivation.sqrtPriceX96,
+                SwapMath.getSqrtPriceTarget(_derivation.zeroForOne, sqrtPriceNextX96, _derivation.sqrtPriceLimitX96),
+                _derivation.liquidity,
+                _derivation.amountRemaining,
+                _derivation.swapFee
+            );
+
+            _derivation.amountRemaining = _derivation.exactOutput
+                ? _derivation.amountRemaining - amountOut.toInt256()
+                : _derivation.amountRemaining + (amountIn + feeAmount).toInt256();
+        }
+
+        if (_derivation.sqrtPriceX96 == sqrtPriceNextX96) {
+            if (initialized) {
+                (, int128 liquidityNet) = poolManager.getTickLiquidity(_derivation.poolId, tickNext);
+
+                _derivation.liquidity =
+                    LiquidityMath.addDelta(_derivation.liquidity, _derivation.zeroForOne ? -liquidityNet : liquidityNet);
+            }
+
+            _derivation.tick = _derivation.zeroForOne ? tickNext - 1 : tickNext;
+        } else if (_derivation.sqrtPriceX96 != sqrtPriceStartX96) {
+            _derivation.tick = TickMath.getTickAtSqrtPrice(_derivation.sqrtPriceX96);
+        }
+    }
+
+    /// @dev Derives the pool state a proposed liquidity removal would leave behind.
+    ///
+    ///      A removal cannot move the square-root price, so the entire question is whether the removed
+    ///      range is active at the authoritative current tick. Capacity is afterwards recomputed from the
+    ///      prospective liquidity rather than approximated as a withdrawn token amount.
+    /// @param _params The proposed liquidity modification.
+    /// @return sqrtPriceX96 The unchanged authoritative square-root price.
+    /// @return liquidity The predicted post-removal active liquidity.
+    function _prospectiveLiquidityRemovalState(ModifyLiquidityParams calldata _params)
+        internal
+        view
+        returns (uint160 sqrtPriceX96, uint128 liquidity)
+    {
+        if (_params.liquidityDelta >= 0) revert StandbyHook__NotALiquidityRemoval(_params.liquidityDelta);
+
+        int24 tick;
+
+        (, sqrtPriceX96, tick, liquidity) = _currentPoolState();
+
+        liquidity = StandbyMath.liquidityAfterRemoval(
+            liquidity, tick, _params.tickLower, _params.tickUpper, uint256(-_params.liquidityDelta).toUint128()
+        );
+    }
+
+    /// @dev Locates the next candidate swap-step target, reading the authoritative tick bitmap.
+    ///
+    ///      The bitmap word is read from PoolManager and the search over it is performed by the pure
+    ///      kernel, so the state read and the arithmetic stay on their own sides of the boundary. The
+    ///      min/max clamping mirrors the pinned swap loop, which applies it because the bitmap itself is
+    ///      unaware of the tick bounds.
+    function _nextSwapTargetTick(PoolId _poolId, int24 _tick, int24 _tickSpacing, bool _zeroForOne)
+        internal
+        view
+        returns (int24 tickNext, bool initialized)
+    {
+        (int16 wordPos, int24 compressed, uint8 bitPos) =
+            StandbyMath.bitmapSearchPosition(_tick, _tickSpacing, _zeroForOne);
+
+        uint256 word = poolManager.getTickBitmap(_poolId, wordPos);
+
+        (tickNext, initialized) = StandbyMath.nextTickWithinOneWord(word, compressed, bitPos, _tickSpacing, _zeroForOne);
+
+        if (tickNext <= TickMath.MIN_TICK) tickNext = TickMath.MIN_TICK;
+        if (tickNext >= TickMath.MAX_TICK) tickNext = TickMath.MAX_TICK;
+    }
+
+    /// @dev Reproduces the price-limit conditions Uniswap v4 imposes on a swap before it begins.
+    function _requireSupportedSwapPriceLimit(bool _zeroForOne, uint160 _sqrtPriceX96, uint160 _sqrtPriceLimitX96)
+        internal
+        pure
+    {
+        bool supported = _zeroForOne
+            ? _sqrtPriceLimitX96 < _sqrtPriceX96 && _sqrtPriceLimitX96 > TickMath.MIN_SQRT_PRICE
+            : _sqrtPriceLimitX96 > _sqrtPriceX96 && _sqrtPriceLimitX96 < TickMath.MAX_SQRT_PRICE;
+
+        if (!supported) {
+            revert StandbyHook__UnsupportedSwapPriceLimit(_zeroForOne, _sqrtPriceX96, _sqrtPriceLimitX96);
+        }
+    }
+
     /// @dev Validates the proposed service geometry against the authoritative pool environment.
     ///
     ///      `tickQ` and `tickO` are direction-relative semantic boundaries, not numerical low/high
@@ -580,17 +1064,35 @@ contract StandbyHook is BaseHook {
         _validateServiceTick(_tickQ, _tickSpacing);
         _validateServiceTick(_tickO, _tickSpacing);
 
-        bool ordered = _protectedZeroForOne ? _tickQ < _tickO : _tickQ > _tickO;
+        if (!ServiceDomain.isDirectionConsistent(_protectedZeroForOne, _tickQ, _tickO)) {
+            revert StandbyHook__InvalidServiceDomainOrder(_protectedZeroForOne, _tickQ, _tickO);
+        }
 
-        if (!ordered) revert StandbyHook__InvalidServiceDomainOrder(_protectedZeroForOne, _tickQ, _tickO);
+        (uint160 sqrtLowerX96, uint160 sqrtUpperX96) = ServiceDomain.sqrtBounds(_tickQ, _tickO);
 
-        (int24 lowerTick, int24 upperTick) = _protectedZeroForOne ? (_tickQ, _tickO) : (_tickO, _tickQ);
-
-        uint160 sqrtLowerX96 = TickMath.getSqrtPriceAtTick(lowerTick);
-        uint160 sqrtUpperX96 = TickMath.getSqrtPriceAtTick(upperTick);
-
-        if (_sqrtPriceX96 < sqrtLowerX96 || _sqrtPriceX96 > sqrtUpperX96) {
+        if (!ServiceDomain.containsPrice(_sqrtPriceX96, sqrtLowerX96, sqrtUpperX96)) {
             revert StandbyHook__CurrentPriceOutsideServiceDomain(_sqrtPriceX96, sqrtLowerX96, sqrtUpperX96);
+        }
+    }
+
+    /// @dev Requires the proposed immutable domain to be prospectively derivable within the supported
+    ///      bound.
+    ///
+    ///      Prospective backing enforcement depends on deriving the exact post-transition v4 state, and
+    ///      that derivation walks the same bounded step traversal Uniswap walks. A domain wide enough — in
+    ///      tick-bitmap words, which is boundary ticks and tick spacing together — to demand more steps
+    ///      than the realization supports would be a service whose ordinary supported operations could not
+    ///      be authoritatively evaluated. The service basis is immutable, so nothing could repair that
+    ///      afterwards.
+    ///
+    ///      The check therefore belongs here, before any authoritative persistence, rather than being
+    ///      discovered at runtime by an already-activated service. `ServiceDomain` derives the topology
+    ///      fact; this Hook owns the supported bound and the consequence.
+    function _validateProspectiveDerivability(int24 _tickQ, int24 _tickO, int24 _tickSpacing) internal pure {
+        uint256 demand = ServiceDomain.prospectiveTraversalDemand(_tickQ, _tickO, _tickSpacing);
+
+        if (demand > MAX_PROSPECTIVE_SWAP_STEPS) {
+            revert StandbyHook__ProspectiveTraversalDemandExceedsBound(demand, MAX_PROSPECTIVE_SWAP_STEPS);
         }
     }
 

@@ -13,6 +13,7 @@ import {StandbyHook} from "../../src/StandbyHook.sol";
 import {IEligibilityRegistry} from "../../src/interfaces/IEligibilityRegistry.sol";
 
 import {BaseStandbyServiceTest} from "../shared/BaseStandbyServiceTest.t.sol";
+import {ReferenceCalculations} from "../shared/ReferenceCalculations.sol";
 
 /*//////////////////////////////////////////////////////////////
                              CONTRACTS
@@ -36,13 +37,26 @@ contract StandbyServiceGeometryFuzzTest is BaseStandbyServiceTest {
     /// @dev The tick spacing used by the tests that do not fuzz the spacing itself.
     int24 internal constant FUZZ_TICK_SPACING = 10;
 
+    /// @dev The number of compressed ticks one Uniswap tick-bitmap word holds.
+    int256 internal constant WORD_SIZE = 256;
+
+    /// @dev The greatest number of whole bitmap words a domain may span above its lower boundary's word
+    ///      and still be derivable within the supported traversal bound, leaving room for the conditional
+    ///      crossing step.
+    int256 internal constant MAX_DERIVABLE_WORD_SPAN = 14;
+
     /*//////////////////////////////////////////////////////////////
                         ACCEPTED SERVICE GEOMETRY
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Proves any aligned direction-relative domain containing the current price activates.
+    /// @notice Proves any aligned, prospectively derivable domain containing the current price activates.
     /// @dev Both protected directions are explored, and the current price is free to land strictly
     ///      inside the domain or exactly on either boundary, because the domain is closed.
+    ///
+    ///      The generator keeps the domain inside the supported prospective-traversal bound. That is not
+    ///      a convenience: an over-bound domain is no longer an admissible configuration at all, so
+    ///      generating one and expecting activation would be asserting that an unsupported service must
+    ///      become authoritative. The rejection side of that boundary is fuzzed separately below.
     function testFuzz_activation_acceptsAnyAlignedDomainContainingTheCurrentPrice(
         uint256 _spacingSeed,
         int256 _lowerSeed,
@@ -51,11 +65,17 @@ contract StandbyServiceGeometryFuzzTest is BaseStandbyServiceTest {
         bool _protectedZeroForOne
     ) public {
         (int24 tickSpacing, int24 lowerTick, int24 upperTick) =
-            _boundAlignedDomain(_spacingSeed, _lowerSeed, _upperSeed);
+            _boundDerivableDomain(_spacingSeed, _lowerSeed, _upperSeed);
 
         int24 initialTick = _boundInitialTickInside(_priceSeed, lowerTick, upperTick);
 
         (int24 tickQ, int24 tickO) = _protectedZeroForOne ? (lowerTick, upperTick) : (upperTick, lowerTick);
+
+        assertLe(
+            ReferenceCalculations.referenceProspectiveTraversalDemand(tickQ, tickO, tickSpacing),
+            hook.MAX_PROSPECTIVE_SWAP_STEPS(),
+            "the generator must only propose derivable domains"
+        );
 
         PoolKey memory key = _fuzzPoolKey(tickSpacing);
         _initializePoolAtTick(key, initialTick);
@@ -73,11 +93,55 @@ contract StandbyServiceGeometryFuzzTest is BaseStandbyServiceTest {
 
         StandbyHook.ProtectedExecutionService memory service = hook.protectedExecutionService();
 
-        assertTrue(service.configured, "a contained aligned domain must activate");
+        assertTrue(service.configured, "a contained aligned derivable domain must activate");
         assertEq(service.tickQ, tickQ, "tickQ fidelity");
         assertEq(service.tickO, tickO, "tickO fidelity");
         assertEq(service.protectedZeroForOne, _protectedZeroForOne, "direction fidelity");
         assertEq(service.poolKey.tickSpacing, tickSpacing, "tick spacing fidelity");
+    }
+
+    /// @notice Proves an otherwise valid domain beyond the supported traversal bound is always rejected.
+    /// @dev Everything else about these configurations is admissible: the boundaries are aligned and
+    ///      direction-consistent, and the current price sits inside the closed domain. The only thing
+    ///      wrong with them is that this reference realization could not derive prospective state across
+    ///      a domain that wide at that tick spacing — so the rejection names that, and nothing economic.
+    function testFuzz_activation_rejectsADomainBeyondTheSupportedTraversalBound(
+        uint256 _spacingSeed,
+        int256 _lowerSeed,
+        int256 _priceSeed,
+        bool _protectedZeroForOne
+    ) public {
+        (int24 tickSpacing, int24 lowerTick, int24 upperTick) = _boundOverBoundDomain(_spacingSeed, _lowerSeed);
+
+        int24 initialTick = _boundInitialTickInside(_priceSeed, lowerTick, upperTick);
+
+        (int24 tickQ, int24 tickO) = _protectedZeroForOne ? (lowerTick, upperTick) : (upperTick, lowerTick);
+
+        uint256 bound = hook.MAX_PROSPECTIVE_SWAP_STEPS();
+        uint256 demand = ReferenceCalculations.referenceProspectiveTraversalDemand(tickQ, tickO, tickSpacing);
+
+        assertGt(demand, bound, "the generator must only propose over-bound domains");
+
+        PoolKey memory key = _fuzzPoolKey(tickSpacing);
+        _initializePoolAtTick(key, initialTick);
+
+        vm.prank(configurationAuthority);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                StandbyHook.StandbyHook__ProspectiveTraversalDemandExceedsBound.selector, demand, bound
+            )
+        );
+        hook.configureAndActivate(
+            key,
+            _protectedZeroForOne,
+            tickQ,
+            tickO,
+            IEligibilityRegistry(address(registry)),
+            exerciseRouter,
+            establishmentAuthority
+        );
+
+        _assertNoServiceConfigured(hook);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -243,6 +307,63 @@ contract StandbyServiceGeometryFuzzTest is BaseStandbyServiceTest {
 
         lowerTick = int24(lowerIndex * int256(tickSpacing));
         upperTick = int24(upperIndex * int256(tickSpacing));
+    }
+
+    /// @dev Bounds an aligned domain that stays inside the supported prospective-traversal bound.
+    ///
+    ///      The bound is a word count, so the generator works in bitmap words rather than in ticks: the
+    ///      lower boundary is free, and the upper one is capped at the top of the word fourteen words
+    ///      above the lower boundary's word. That leaves room for the conditional crossing step whatever
+    ///      alignment the upper boundary lands on, and still explores every tick spacing and every region
+    ///      of the tick range.
+    function _boundDerivableDomain(uint256 _spacingSeed, int256 _lowerSeed, int256 _upperSeed)
+        internal
+        pure
+        returns (int24 tickSpacing, int24 lowerTick, int24 upperTick)
+    {
+        tickSpacing = int24(int256(bound(_spacingSeed, 1, 200)));
+
+        int256 maxIndex = int256(TickMath.MAX_TICK / tickSpacing);
+
+        int256 lowerIndex = bound(_lowerSeed, -maxIndex, maxIndex - 1);
+
+        int256 maxUpperIndex = (_floorDiv(lowerIndex, WORD_SIZE) + MAX_DERIVABLE_WORD_SPAN) * WORD_SIZE + WORD_SIZE - 1;
+
+        if (maxUpperIndex > maxIndex) maxUpperIndex = maxIndex;
+
+        int256 upperIndex = bound(_upperSeed, lowerIndex + 1, maxUpperIndex);
+
+        lowerTick = int24(lowerIndex * int256(tickSpacing));
+        upperTick = int24(upperIndex * int256(tickSpacing));
+    }
+
+    /// @dev Bounds an otherwise admissible aligned domain that exceeds the supported traversal bound.
+    ///
+    ///      The lower boundary is placed low enough that sixteen whole words always fit above it, and the
+    ///      upper boundary is then placed exactly sixteen words higher — one word past what the bound
+    ///      allows, whatever the spacing.
+    function _boundOverBoundDomain(uint256 _spacingSeed, int256 _lowerSeed)
+        internal
+        pure
+        returns (int24 tickSpacing, int24 lowerTick, int24 upperTick)
+    {
+        tickSpacing = int24(int256(bound(_spacingSeed, 1, 200)));
+
+        int256 maxIndex = int256(TickMath.MAX_TICK / tickSpacing);
+        int256 spanIndexes = (MAX_DERIVABLE_WORD_SPAN + 2) * WORD_SIZE;
+
+        int256 lowerIndex = bound(_lowerSeed, -maxIndex, maxIndex - spanIndexes - 1);
+        int256 upperIndex = lowerIndex + spanIndexes;
+
+        lowerTick = int24(lowerIndex * int256(tickSpacing));
+        upperTick = int24(upperIndex * int256(tickSpacing));
+    }
+
+    /// @dev Division rounding toward negative infinity, matching Uniswap's word indexing.
+    function _floorDiv(int256 _numerator, int256 _divisor) internal pure returns (int256 quotient) {
+        quotient = _numerator / _divisor;
+
+        if (_numerator % _divisor != 0 && _numerator < 0) --quotient;
     }
 
     /// @dev Bounds an initializable current tick inside the closed domain, boundaries included.

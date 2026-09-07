@@ -1,13 +1,14 @@
 # Standby --- Uniswap v4 Reference Realization
 
 **Artifact:** `uniswap-v4-realization.md`\
-**Status:** FINAL PASS / FROZEN\
+**Status:** FINAL PASS / FROZEN — amended 2026-09-06\
+**Amendment:** RR-SC-8 corrected after F5 real-PoolManager differential verification established that uninitialized tick-bitmap word boundaries may require multiple Uniswap v4 swap steps even without an initialized liquidity boundary inside the service domain. RR-SC-8A adds admission-time prospective derivability for the bounded reference realization. This amendment changes only Uniswap v4 realization constraints; it does not alter general Standby protocol semantics.\
 **Scope:** ETHGlobal 2026 / minimum Uniswap v4 reference realization\
 **Authority:** This document realizes the frozen Standby canonical
 package in Uniswap v4. It does not redefine general Standby protocol
 semantics.
 
-------------------------------------------------------------------------
+---
 
 ## 1. Purpose and Scope
 
@@ -55,14 +56,14 @@ For each Protected Execution Service (j), the backing condition remains:
 
 where:
 
--   (S_j(t)) is current Supporting Capacity under the service's
-    qualifying execution semantics; and
--   (O_j(t)) is current Aggregate Capacity Obligation derived from
-    commitments that still impose a Capacity Obligation.
+- (S_j(t)) is current Supporting Capacity under the service's
+  qualifying execution semantics; and
+- (O_j(t)) is current Aggregate Capacity Obligation derived from
+  commitments that still impose a Capacity Obligation.
 
 Equality is sufficient.
 
-------------------------------------------------------------------------
+---
 
 ## 2. Reference Realization Overview
 
@@ -72,13 +73,13 @@ The minimum realization contains these economically relevant components:
 
 The hook is the principal authoritative owner of:
 
--   Protected Execution Service state;
--   commitment state;
--   commitment admission;
--   authoritative Standby economic derivations;
--   O2 exercise authorization and causal fulfillment finalization;
--   O3 backing enforcement;
--   service-domain and topology enforcement.
+- Protected Execution Service state;
+- commitment state;
+- commitment admission;
+- authoritative Standby economic derivations;
+- O2 exercise authorization and causal fulfillment finalization;
+- O3 backing enforcement;
+- service-domain and topology enforcement.
 
 The hook does not own mutable registry membership and does not act as an
 LP or swap router.
@@ -87,13 +88,13 @@ LP or swap router.
 
 The ExerciseRouter coordinates the supported O2 transaction:
 
--   receives the exercise request;
--   preserves authenticated exercise-caller provenance;
--   opens the PoolManager execution context;
--   executes one exact-output protected swap;
--   settles the authoritative input debt from the exerciser;
--   directs PoolManager output to the authoritative Beneficiary;
--   invokes Standby finalization.
+- receives the exercise request;
+- preserves authenticated exercise-caller provenance;
+- opens the PoolManager execution context;
+- executes one exact-output protected swap;
+- settles the authoritative input debt from the exerciser;
+- directs PoolManager output to the authoritative Beneficiary;
+- invokes Standby finalization.
 
 The router owns no Standby economic truth.
 
@@ -107,9 +108,9 @@ management functions.
 For the ETHGlobal demo, a minimal single-owner registry is sufficient.
 The permission predicates remain logically distinct:
 
--   `canReceiveProtectedService(address)`
--   `canSwap(address)`
--   `canProvideLiquidity(address)`
+- `canReceiveProtectedService(address)`
+- `canSwap(address)`
+- `canProvideLiquidity(address)`
 
 The same demo administrator may control all three without collapsing
 their semantic distinction.
@@ -118,16 +119,16 @@ their semantic distinction.
 
 The realization uses:
 
--   PoolManager as authoritative AMM execution/accounting state;
--   Universal Router as the approved trusted perimeter for ordinary
-    swaps;
--   PositionManager as the approved trusted perimeter for liquidity
-    actions.
+- PoolManager as authoritative AMM execution/accounting state;
+- Universal Router as the approved trusted perimeter for ordinary
+  swaps;
+- PositionManager as the approved trusted perimeter for liquidity
+  actions.
 
 The hook remains router-agnostic for backing safety but router-selective
 for permissioned participation.
 
-------------------------------------------------------------------------
+---
 
 ## 3. Pool Setup and Initialization
 
@@ -167,10 +168,10 @@ before adopting it.
 
 Before successful service configuration:
 
--   no commitment may be admitted;
--   liquidity addition is rejected;
--   ordinary swap operation is rejected;
--   O2 is unavailable.
+- no commitment may be admitted;
+- liquidity addition is rejected;
+- ordinary swap operation is rejected;
+- O2 is unavailable.
 
 This prevents an uncontrolled topology or runtime history from preceding
 service establishment.
@@ -180,8 +181,9 @@ service establishment.
 `configureAndActivate` validates the authoritative initialized pool
 environment before establishing the PES, including hook binding, zero
 liquidity, supported fee/accounting model, service-domain geometry,
-protected direction, trusted perimeters, eligibility source, and
-authorities.
+prospective-swap derivability within the reference realization's bounded
+traversal limit, protected direction, trusted perimeters, eligibility
+source, and authorities.
 
 ### 3.6 RR-SETUP-5 --- Atomic Service Existence
 
@@ -189,7 +191,7 @@ The MVP has no independent configured-versus-active lifecycle. Before
 successful `configureAndActivate`, no PES exists. After it, the complete
 PES exists and runtime enforcement applies immediately.
 
-------------------------------------------------------------------------
+---
 
 ## 4. Service Configuration and Activation
 
@@ -210,11 +212,14 @@ Configuration occurs exactly once per MVP service.
 9.  validate protected direction;
 10. validate `tickQ` and `tickO`;
 11. validate current price lies in the closed service domain;
-12. validate ExerciseRouter;
-13. validate EligibilityRegistry;
-14. validate establishment authority;
-15. validate realization-wide trusted dependencies;
-16. persist the complete PES atomically.
+12. derive the maximum prospective swap traversal demand implied by the
+    immutable service domain and PoolKey tick spacing and require that it
+    does not exceed the reference realization's supported traversal bound;
+13. validate ExerciseRouter;
+14. validate EligibilityRegistry;
+15. validate establishment authority;
+16. validate realization-wide trusted dependencies;
+17. persist the complete PES atomically.
 
 All validation precedes authoritative service persistence.
 
@@ -251,7 +256,7 @@ mutate the pool. With zero liquidity, Supporting Capacity may be zero.
 Successful configuration immediately activates every applicable
 liquidity, swap, commitment, exercise, topology, and permission rule.
 
-------------------------------------------------------------------------
+---
 
 ## 5. Service Domain and Liquidity Topology
 
@@ -259,9 +264,9 @@ liquidity, swap, commitment, exercise, topology, and permission rule.
 
 The MVP uses two direction-relative service boundaries:
 
--   `tickQ`: the protected execution-quality boundary in the protected
-    direction;
--   `tickO`: the opposite realization-domain boundary.
+- `tickQ`: the protected execution-quality boundary in the protected
+  direction;
+- `tickO`: the opposite realization-domain boundary.
 
 Their exact Q64.96 square-root prices are derived using Uniswap TickMath
 when required.
@@ -318,7 +323,7 @@ Capacity.
 
 > **Economic Backing ≠ Realization-Domain Validity**
 
-------------------------------------------------------------------------
+---
 
 ## 6. Supporting Capacity Realization
 
@@ -328,10 +333,10 @@ Supporting Capacity is derived, not persisted.
 
 Its authoritative inputs are:
 
--   current PoolManager `sqrtPriceX96`;
--   current active liquidity;
--   immutable protected direction;
--   canonical `tickQ`, from which `sqrtQ` is derived.
+- current PoolManager `sqrtPriceX96`;
+- current active liquidity;
+- immutable protected direction;
+- canonical `tickQ`, from which `sqrtQ` is derived.
 
 The current PoolManager square-root price is used directly. It is not
 reconstructed from the current tick.
@@ -377,7 +382,7 @@ This is a valid service-domain state only when:
 
 because backing still requires (S `\ge `{=tex}O).
 
-------------------------------------------------------------------------
+---
 
 ## 7. Prospective State Derivation
 
@@ -397,29 +402,72 @@ Instead:
 For every backing-affecting transition, derive prospective authoritative
 pool state and then derive (S').
 
-### 7.3 RR-SC-8 --- Single-Step Swap Prospective Derivation
+### 7.3 RR-SC-8 --- Exact Bounded Swap Prospective Derivation
 
-Within the no-interior-boundary topology, `beforeSwap` derives
-prospective swap price using the same supported
-`SwapMath.computeSwapStep` semantics from:
+Within the supported no-interior-initialized-boundary topology,
+`beforeSwap` derives prospective swap state by reproducing the
+economically relevant Uniswap v4 swap-loop semantics required to
+determine exact prospective square-root price and active liquidity.
 
--   current exact square-root price;
--   current active liquidity;
--   authoritative SwapParams;
--   effective v4 fee.
+The derivation uses:
 
-The simplification is valid because:
+- current exact square-root price;
+- current active liquidity;
+- authoritative SwapParams;
+- effective v4 fee;
+- Uniswap v4 swap-step arithmetic;
+- tick-bitmap traversal and relevant initialized-boundary handling;
+- the corresponding tick-transition semantics required by the pinned
+  v4 realization.
 
--   there is no initialized liquidity boundary strictly inside the
-    service domain;
--   caller price limits are confined to the domain;
--   LP fee behavior is static;
--   custom accounting is excluded;
--   `beforeSwap` return deltas are excluded.
+Absence of an initialized liquidity boundary strictly inside the service
+domain guarantees a stable active-liquidity region. It does **not**
+imply that Uniswap v4 reaches the prospective state through a single
+`SwapMath.computeSwapStep`: an uninitialized tick-bitmap word boundary
+may still divide execution into multiple arithmetic steps without
+changing active liquidity.
 
-After deriving prospective price, recompute (S').
+The supported simplification therefore consists of stable active
+liquidity across the service-domain interior, not single-step execution.
+Caller-reachable swap paths remain confined to the service domain; LP
+fee behavior is static; custom accounting is excluded; and `beforeSwap`
+return deltas are excluded.
 
-### 7.4 RR-SC-9 --- Prospective Liquidity-Removal Derivation
+After deriving the exact prospective state, recompute (S') through the
+same authoritative Supporting Capacity derivation used for current
+state.
+
+### 7.4 RR-SC-8A --- Admission-Time Prospective Derivability
+
+Define:
+
+- (D): the maximum prospective traversal demand implied by the proposed
+  immutable service-domain geometry and the PoolKey tick spacing under
+  the supported Uniswap v4 swap-loop and tick-bitmap semantics;
+- (M): the reference realization's supported maximum prospective
+  swap-step traversal count.
+
+The reference realization uses a bounded prospective-state derivation.
+Before a PES becomes authoritative, configuration must establish:
+
+\[ D `\le `{=tex}M \]
+
+A proposed service configuration for which (D > M) is unsupported by
+this reference realization and must be rejected before activation.
+
+This is a realization-admissibility constraint, not a new Standby
+economic condition. The bound does not change Supporting Capacity,
+Aggregate Capacity Obligation, commitment semantics, or the meaning of
+the service boundaries.
+
+A runtime traversal-bound failure remains a defensive fail-closed
+condition. It must not be the ordinary mechanism by which an already
+activated, otherwise supported service discovers that its immutable
+domain cannot be authoritatively evaluated.
+
+> **Activated Realization ⇒ Supported In-Domain Prospective Derivability**
+
+### 7.5 RR-SC-9 --- Prospective Liquidity-Removal Derivation
 
 Liquidity removal does not itself move square-root price.
 
@@ -432,18 +480,18 @@ not.
 
 Then derive (S') and require backing preservation.
 
-### 7.5 RR-SC-10 --- Non-Impairing Addition Simplification
+### 7.6 RR-SC-10 --- Non-Impairing Addition Simplification
 
 After permission and topology checks pass, positive liquidity addition
 cannot reduce Supporting Capacity:
 
--   active addition increases active liquidity;
--   inactive addition leaves active liquidity unchanged.
+- active addition increases active liquidity;
+- inactive addition leaves active liquidity unchanged.
 
 No independent backing rejection is required beyond the applicable
 topology/permission constraints.
 
-------------------------------------------------------------------------
+---
 
 ## 8. Permission and Identity Control
 
@@ -451,13 +499,13 @@ topology/permission constraints.
 
 The realization preserves separate authority/permission concepts:
 
--   configuration authority;
--   commitment-establishment authority;
--   Beneficiary eligibility;
--   exercise authority;
--   trader eligibility;
--   liquidity-action eligibility;
--   registry administration authority.
+- configuration authority;
+- commitment-establishment authority;
+- Beneficiary eligibility;
+- exercise authority;
+- trader eligibility;
+- liquidity-action eligibility;
+- registry administration authority.
 
 A demo wallet may hold several roles, but the protocol surfaces and
 predicates remain semantically distinct.
@@ -474,10 +522,10 @@ commitment.
 
 It yields:
 
--   Validity unchanged;
--   Exercisability false;
--   Remaining Entitlement unchanged;
--   Capacity Obligation unchanged.
+- Validity unchanged;
+- Exercisability false;
+- Remaining Entitlement unchanged;
+- Capacity Obligation unchanged.
 
 Eligibility restoration may restore Exercisability.
 
@@ -498,9 +546,9 @@ authenticated original-caller resolution.
 
 The ETHGlobal realization uses:
 
--   Universal Router for ordinary swaps;
--   PositionManager for liquidity actions;
--   ExerciseRouter for O2.
+- Universal Router for ordinary swaps;
+- PositionManager for liquidity actions;
+- ExerciseRouter for O2.
 
 ### 8.7 RR-PERM-5 --- Safety-Complete but Permission-Closed Boundary
 
@@ -546,7 +594,7 @@ The ETHGlobal demo may use a minimal single-owner registry.
 Beneficiary, trader, and liquidity-action eligibility remain separate
 predicates even if one owner administers all of them.
 
-------------------------------------------------------------------------
+---
 
 ## 9. Persistent State and Derived State
 
@@ -554,14 +602,14 @@ predicates even if one owner administers all of them.
 
 The conceptual minimum PES basis is:
 
--   service-existence/configured fact;
--   PoolKey;
--   protected direction;
--   `tickQ`;
--   `tickO`;
--   ExerciseRouter;
--   EligibilityRegistry;
--   establishment authority.
+- service-existence/configured fact;
+- PoolKey;
+- protected direction;
+- `tickQ`;
+- `tickO`;
+- ExerciseRouter;
+- EligibilityRegistry;
+- establishment authority.
 
 ### 9.2 RR-STATE-1 --- Persistent PoolKey Basis
 
@@ -605,7 +653,7 @@ No independent active/paused state is persisted.
 PoolKey is validated against the supported fee model; Standby does not
 persist a redundant independent fee-state mirror.
 
-------------------------------------------------------------------------
+---
 
 ## 10. Commitment State and Bounded Enforcement References
 
@@ -613,13 +661,13 @@ persist a redundant independent fee-state mirror.
 
 A commitment record conceptually persists:
 
--   immutable service reference;
--   Beneficiary;
--   exercise authority;
--   Original Entitlement;
--   Remaining Entitlement;
--   `exercisableFrom`;
--   `validUntil`.
+- immutable service reference;
+- Beneficiary;
+- exercise authority;
+- Original Entitlement;
+- Remaining Entitlement;
+- `exercisableFrom`;
+- `validUntil`.
 
 The mapping key supplies the unique commitment identity.
 
@@ -649,9 +697,9 @@ This is not a lifetime commitment limit.
 
 Conceptually:
 
--   `nextCommitmentId`;
--   `commitments[commitmentId]`;
--   fixed-size commitment-reference slots.
+- `nextCommitmentId`;
+- `commitments[commitmentId]`;
+- fixed-size commitment-reference slots.
 
 Commitment IDs are unique and never recycled. Slots are reusable.
 
@@ -687,15 +735,15 @@ A stale reference to a terminal commitment contributes zero Capacity
 Obligation according to current authoritative derivation and may be
 reclaimed during a bounded scan.
 
-------------------------------------------------------------------------
+---
 
 ## 11. Temporal Semantics
 
 Define:
 
--   (T_E): admitted `exercisableFrom`;
--   (T_V): admitted `validUntil`;
--   (t): current authoritative `block.timestamp`.
+- (T_E): admitted `exercisableFrom`;
+- (T_V): admitted `validUntil`;
+- (t): current authoritative `block.timestamp`.
 
 A successfully established commitment is binding immediately.
 
@@ -731,16 +779,16 @@ backing-binding while not yet exercisable.
 
 At `block.timestamp >= validUntil`:
 
--   Validity is false;
--   Exercisability is false;
--   Remaining Entitlement is unchanged;
--   Capacity Obligation is zero.
+- Validity is false;
+- Exercisability is false;
+- Remaining Entitlement is unchanged;
+- Capacity Obligation is zero.
 
 ### 11.4 RR-O1-21 --- Derived Time Consequences / No Expiry State
 
 No expiry transaction or cached expired/valid flag is required.
 
-------------------------------------------------------------------------
+---
 
 ## 12. O1 --- Commitment Establishment
 
@@ -822,7 +870,7 @@ Do not independently persist fulfillment totals, Capacity Obligation,
 Validity, Exercisability, lifecycle status, live status, Aggregate
 Obligation, or duplicated PES semantics when reconstructible.
 
-------------------------------------------------------------------------
+---
 
 ## 13. O2 --- Exercise and Fulfillment
 
@@ -841,16 +889,16 @@ The minimum O2 path is:
 
 The ExerciseRouter coordinates but does not determine:
 
--   commitment existence;
--   Beneficiary;
--   exercise authority;
--   Validity;
--   Exercisability;
--   Remaining Entitlement;
--   permissible (q);
--   Supporting Capacity;
--   fulfillment;
--   entitlement reduction.
+- commitment existence;
+- Beneficiary;
+- exercise authority;
+- Validity;
+- Exercisability;
+- Remaining Entitlement;
+- permissible (q);
+- Supporting Capacity;
+- fulfillment;
+- entitlement reduction.
 
 `hookData` transports causal context but conveys no economic authority.
 
@@ -858,20 +906,20 @@ The ExerciseRouter coordinates but does not determine:
 
 Before the qualifying swap is authorized, Standby verifies:
 
--   configured ExerciseRouter path;
--   commitment identity;
--   service/pool binding;
--   authoritative Beneficiary;
--   authenticated exercise authority;
--   current Validity;
--   current Exercisability;
--   current Beneficiary eligibility;
--   (q\>0);
--   (q `\le `{=tex}RemainingEntitlement);
--   protected direction;
--   exact-output specification;
--   exact configured `P_Q` price limit;
--   prospective successful post-fulfillment backing.
+- configured ExerciseRouter path;
+- commitment identity;
+- service/pool binding;
+- authoritative Beneficiary;
+- authenticated exercise authority;
+- current Validity;
+- current Exercisability;
+- current Beneficiary eligibility;
+- (q\>0);
+- (q `\le `{=tex}RemainingEntitlement);
+- protected direction;
+- exact-output specification;
+- exact configured `P_Q` price limit;
+- prospective successful post-fulfillment backing.
 
 ### 13.4 RR-O2-6 --- Prospective Atomic Backing Evaluation
 
@@ -917,7 +965,7 @@ the transaction reverts.
 `maxInput` is exercise-local cost protection and does not change
 commitment validity, entitlement, obligation, or service semantics.
 
-------------------------------------------------------------------------
+---
 
 ## 14. O2 Input Settlement
 
@@ -953,7 +1001,7 @@ The supported O2 execution contains no unrelated swaps, cross-commitment
 netting, ERC6909 substitution, or other PoolManager activity that would
 contaminate exercise-local deltas.
 
-------------------------------------------------------------------------
+---
 
 ## 15. O2 Direct Delivery and Finalization
 
@@ -1008,7 +1056,7 @@ the exact amounts represented by v4 accounting.
 Fee-on-transfer, rebasing-transfer, or equivalent incompatible semantics
 are outside the reference scope.
 
-------------------------------------------------------------------------
+---
 
 ## 16. O2 Transaction-Scoped Causal Proof
 
@@ -1021,13 +1069,13 @@ Conceptually:
 
 The context binds at least:
 
--   PoolId/service;
--   commitment ID;
--   authenticated ExerciseRouter;
--   authenticated exerciser;
--   authoritative Beneficiary;
--   (q);
--   protected execution context.
+- PoolId/service;
+- commitment ID;
+- authenticated ExerciseRouter;
+- authenticated exerciser;
+- authoritative Beneficiary;
+- (q);
+- protected execution context.
 
 ### 16.1 RR-O2-4 --- Transaction-Scoped Causal Proof Integrity
 
@@ -1042,10 +1090,10 @@ Finalization consumes the proof exactly once.
 
 The MVP supports exactly:
 
--   one commitment exercise;
--   one qualifying swap;
--   one direct Beneficiary delivery;
--   one finalization
+- one commitment exercise;
+- one qualifying swap;
+- one direct Beneficiary delivery;
+- one finalization
 
 per top-level exercise invocation.
 
@@ -1061,7 +1109,7 @@ economically intermediate state.
 The exact Solidity guard mechanism is an implementation choice; the
 behavioral restriction is not.
 
-------------------------------------------------------------------------
+---
 
 ## 17. O3 --- Backing-Affecting Shared-Resource Transitions
 
@@ -1104,12 +1152,12 @@ unchanged.
 
 An addition must:
 
--   come through an approved participant-provenance perimeter for the
-    permissioned MVP;
--   satisfy liquidity-action eligibility when introducing/increasing
-    liquidity;
--   not introduce a position boundary strictly inside the service
-    domain.
+- come through an approved participant-provenance perimeter for the
+  permissioned MVP;
+- satisfy liquidity-action eligibility when introducing/increasing
+  liquidity;
+- not introduce a position boundary strictly inside the service
+  domain.
 
 After these checks, positive addition does not require an additional
 backing rejection because it cannot reduce Supporting Capacity.
@@ -1134,7 +1182,7 @@ callback. Verification independently proves that the prospective
 derivation equals actual v4 transition behavior throughout the supported
 domain.
 
-------------------------------------------------------------------------
+---
 
 ## 18. Complete Pool Enforcement Surface
 
@@ -1142,10 +1190,10 @@ domain.
 
 The minimum hook permissions are:
 
--   `beforeAddLiquidity = true`
--   `beforeRemoveLiquidity = true`
--   `beforeSwap = true`
--   `afterSwap = true`
+- `beforeAddLiquidity = true`
+- `beforeRemoveLiquidity = true`
+- `beforeSwap = true`
+- `afterSwap = true`
 
 All other hook callbacks are disabled for the reference realization.
 
@@ -1155,20 +1203,20 @@ Every enabled Standby v4 callback must reject authoritative interpretation unles
 
 ### 18.2 Economically relevant transition classification
 
--   initialize: pre-operational setup, not live O3;
--   protected-direction swap: can reduce Supporting Capacity;
--   opposite-direction swap: can violate the supported domain;
--   liquidity removal: can reduce active liquidity and Supporting
-    Capacity;
--   liquidity addition: can introduce an interior initialized boundary;
--   donate: not a backing mutation under the selected model;
--   settlement/accounting claim operations: do not independently mutate
-    pool price/active-liquidity topology under the selected model;
--   protocol-fee mutation: not directly capacity-reducing under selected
-    output-side semantics, subject to derivation-equivalence
-    verification;
--   dynamic LP fee behavior: excluded;
--   custom accounting: excluded.
+- initialize: pre-operational setup, not live O3;
+- protected-direction swap: can reduce Supporting Capacity;
+- opposite-direction swap: can violate the supported domain;
+- liquidity removal: can reduce active liquidity and Supporting
+  Capacity;
+- liquidity addition: can introduce an interior initialized boundary;
+- donate: not a backing mutation under the selected model;
+- settlement/accounting claim operations: do not independently mutate
+  pool price/active-liquidity topology under the selected model;
+- protocol-fee mutation: not directly capacity-reducing under selected
+  output-side semantics, subject to derivation-equivalence
+  verification;
+- dynamic LP fee behavior: excluded;
+- custom accounting: excluded.
 
 ### 18.3 Hook-originated mutation exclusion
 
@@ -1177,7 +1225,7 @@ swaps or liquidity modifications.
 
 This avoids a self-call enforcement gap.
 
-------------------------------------------------------------------------
+---
 
 ## 19. Control Boundaries
 
@@ -1214,7 +1262,7 @@ A commitment ceases to impose future Capacity Obligation only through:
 There is no pause/deactivate mechanism that terminates, releases, or
 reinterprets existing commitments.
 
-------------------------------------------------------------------------
+---
 
 ## 20. Authoritative-Path and Bypass Closure
 
@@ -1245,10 +1293,10 @@ No context means no entitlement mutation.
 
 Causal evidence cannot be reused:
 
--   twice;
--   for another commitment;
--   for another pool;
--   in another transaction.
+- twice;
+- for another commitment;
+- for another pool;
+- in another transaction.
 
 ### 20.5 Registry administration cannot release backing
 
@@ -1290,43 +1338,47 @@ protected backing property encounters Standby enforcement. Approved
 perimeters determine participant authentication, not backing-safety
 completeness.
 
-------------------------------------------------------------------------
+---
 
 ## 21. Authoritative Consequence Ownership
 
-  -----------------------------------------------------------------------
-  Economic consequence                Authoritative path
-  ----------------------------------- -----------------------------------
-  PES establishment                   `configureAndActivate`
+---
 
-  PES semantic mutation after         none
-  establishment                       
+Economic consequence Authoritative path
 
-  Registry membership mutation        EligibilityRegistry administrator
+---
 
-  Commitment establishment            O1
+PES establishment `configureAndActivate`
 
-  Remaining Entitlement reduction     successful O2 finalization
+PES semantic mutation after none
+establishment
 
-  Fulfillment                         exact qualifying O2 execution +
-                                      direct delivery + causal
-                                      finalization
+Registry membership mutation EligibilityRegistry administrator
 
-  Capacity Obligation release         fulfillment exhaustion or derived
-                                      expiry
+Commitment establishment O1
 
-  Supporting Capacity change          authoritative v4 pool transition
+Remaining Entitlement reduction successful O2 finalization
 
-  Protected-capacity impairment       PoolManager transition subject to
-                                      O3
+Fulfillment exact qualifying O2 execution +
+direct delivery + causal
+finalization
 
-  Bounded-reference reclamation       canonical consequence derivation
-                                      during bounded processing
+Capacity Obligation release fulfillment exhaustion or derived
+expiry
 
-  Historical commitment deletion      none required
-  -----------------------------------------------------------------------
+Supporting Capacity change authoritative v4 pool transition
 
-------------------------------------------------------------------------
+Protected-capacity impairment PoolManager transition subject to
+O3
+
+Bounded-reference reclamation canonical consequence derivation
+during bounded processing
+
+Historical commitment deletion none required
+
+---
+
+---
 
 ## 22. Failure Atomicity and Economic Finality
 
@@ -1360,7 +1412,7 @@ the canonical requirement of authoritative economic atomicity.
 This is a realization choice, not the general definition of economic
 atomicity.
 
-------------------------------------------------------------------------
+---
 
 ## 23. Positive Permissiveness
 
@@ -1370,22 +1422,22 @@ frozen semantics permit.
 The reference implementation must preserve at least these boundary
 cases:
 
--   backing equality (S=O);
--   O1 equality (S=O');
--   O1 whose exercise window is already open;
--   service configuration with zero Supporting Capacity;
--   current price exactly on a closed service boundary where other
-    requirements hold;
--   topology-valid LP positions whose endpoints equal or lie outside the
-    service domain;
--   harmless positions entirely outside the service domain;
--   LP reduction/exit after loss of add eligibility, subject to backing;
--   reclaiming an authoritatively terminal bounded reference during O1
-    without a prior keeper transaction;
--   zero Aggregate Capacity Obligation while retaining
-    service-domain/topology enforcement.
+- backing equality (S=O);
+- O1 equality (S=O');
+- O1 whose exercise window is already open;
+- service configuration with zero Supporting Capacity;
+- current price exactly on a closed service boundary where other
+  requirements hold;
+- topology-valid LP positions whose endpoints equal or lie outside the
+  service domain;
+- harmless positions entirely outside the service domain;
+- LP reduction/exit after loss of add eligibility, subject to backing;
+- reclaiming an authoritatively terminal bounded reference during O1
+  without a prior keeper transaction;
+- zero Aggregate Capacity Obligation while retaining
+  service-domain/topology enforcement.
 
-------------------------------------------------------------------------
+---
 
 ## 24. Currency, Fee, Pool, and Accounting Compatibility
 
@@ -1394,38 +1446,38 @@ authoritative derivations have been established.
 
 ### 24.1 Supported assumptions
 
--   Uniswap v4 PoolManager;
--   static LP fee model compatible with the selected prospective
-    derivation;
--   exact-transfer-compatible currencies;
--   no custom accounting return deltas;
--   no dynamic LP-fee behavior that invalidates the selected derivation;
--   no unsupported exercise-local output substitution.
+- Uniswap v4 PoolManager;
+- static LP fee model compatible with the selected prospective
+  derivation;
+- exact-transfer-compatible currencies;
+- no custom accounting return deltas;
+- no dynamic LP-fee behavior that invalidates the selected derivation;
+- no unsupported exercise-local output substitution.
 
 ### 24.2 Excluded behaviors
 
 The MVP does not claim correctness for:
 
--   fee-on-transfer currencies;
--   rebasing-transfer behavior capable of breaking exact delivery;
--   dynamic LP-fee semantics outside the selected proof;
--   custom accounting that changes authoritative swap amounts;
--   arbitrary tick traversal through interior initialized boundaries;
--   exercise output represented only by claims rather than direct
-    Beneficiary delivery.
+- fee-on-transfer currencies;
+- rebasing-transfer behavior capable of breaking exact delivery;
+- dynamic LP-fee semantics outside the selected proof;
+- custom accounting that changes authoritative swap amounts;
+- arbitrary tick traversal through interior initialized boundaries;
+- exercise output represented only by claims rather than direct
+  Beneficiary delivery.
 
-------------------------------------------------------------------------
+---
 
 ## 25. Atomicity and Reentrancy Assumptions
 
 The supported O2 execution is intentionally narrow:
 
--   one top-level exercise;
--   one commitment;
--   one exact-output swap;
--   one input settlement;
--   one direct output delivery;
--   one finalization.
+- one top-level exercise;
+- one commitment;
+- one exact-output swap;
+- one input settlement;
+- one direct output delivery;
+- one finalization.
 
 No batching, nested O2, split execution, or unrelated PoolManager
 netting is supported.
@@ -1433,7 +1485,7 @@ netting is supported.
 Transaction-scoped evidence is used only for intermediate causal facts.
 Persistent state records the economically final consequence.
 
-------------------------------------------------------------------------
+---
 
 ## 26. Verification Obligations
 
@@ -1459,15 +1511,15 @@ normative/reference derivations.
 
 Critical v4-specific VF-3 targets include:
 
--   Supporting Capacity delta formulas versus actual v4 execution to
-    `P_Q`;
--   prospective swap price derivation versus actual PoolManager result;
--   active-liquidity removal derivation versus actual v4 liquidity
-    behavior;
--   output-side fee-independence assumption;
--   protocol-fee treatment under the selected capacity denomination;
--   exact current-price handling;
--   boundary rounding conventions.
+- Supporting Capacity delta formulas versus actual v4 execution to
+  `P_Q`;
+- prospective swap price derivation versus actual PoolManager result;
+- active-liquidity removal derivation versus actual v4 liquidity
+  behavior;
+- output-side fee-independence assumption;
+- protocol-fee treatment under the selected capacity denomination;
+- exact current-price handling;
+- boundary rounding conventions.
 
 ### VF-4 --- Transition-Result Verification
 
@@ -1493,167 +1545,171 @@ residue.
 
 Verification must establish:
 
--   generic routers cannot obtain O2 semantics through hook data;
--   caller provenance cannot be forged;
--   exact-output (q) is enforced;
--   `P_Q` is fixed;
--   prospective (S' `\ge `{=tex}O-q) is correct;
--   actual output equals (q);
--   actual post-state Supporting Capacity satisfies post-fulfillment
-    backing;
--   actual PoolManager input debt governs `maxInput`;
--   payer is the authenticated exerciser;
--   output goes directly to authoritative Beneficiary;
--   finalization requires and consumes matching causal proof;
--   double/cross-commitment/cross-pool proof reuse fails;
--   failure rolls back entitlement and pool effects.
+- generic routers cannot obtain O2 semantics through hook data;
+- caller provenance cannot be forged;
+- exact-output (q) is enforced;
+- `P_Q` is fixed;
+- prospective (S' `\ge `{=tex}O-q) is correct;
+- actual output equals (q);
+- actual post-state Supporting Capacity satisfies post-fulfillment
+  backing;
+- actual PoolManager input debt governs `maxInput`;
+- payer is the authenticated exerciser;
+- output goes directly to authoritative Beneficiary;
+- finalization requires and consumes matching causal proof;
+- double/cross-commitment/cross-pool proof reuse fails;
+- failure rolls back entitlement and pool effects.
 
 ### 26.2 O3-specific verification
 
 Verification must establish:
 
--   protected ordinary swaps preserve (S' `\ge `{=tex}O);
--   opposite swaps remain inside the service domain;
--   alternate router paths cannot bypass backing enforcement;
--   liquidity removals preserve backing;
--   topology-invalid additions reject;
--   topology-valid additions remain permissive;
--   zero-delta operations are economically neutral;
--   zero-obligation state does not disable domain/topology continuity;
--   hook-originated backing mutation is absent.
+- protected ordinary swaps preserve (S' `\ge `{=tex}O);
+- opposite swaps remain inside the service domain;
+- alternate router paths cannot bypass backing enforcement;
+- liquidity removals preserve backing;
+- topology-invalid additions reject;
+- topology-valid additions remain permissive;
+- zero-delta operations are economically neutral;
+- zero-obligation state does not disable domain/topology continuity;
+- hook-originated backing mutation is absent.
 
 ### 26.3 Permission-specific verification
 
 Verification must establish:
 
--   Beneficiary, trader, and liquidity-action predicates remain
-    distinct;
--   registry membership changes affect only the intended operational
-    predicates;
--   eligibility loss does not release obligation;
--   LP exits are not incorrectly blocked by loss of add eligibility;
--   unapproved identity perimeters cannot manufacture participant
-    identity;
--   StandbyHook cannot mutate registry membership.
+- Beneficiary, trader, and liquidity-action predicates remain
+  distinct;
+- registry membership changes affect only the intended operational
+  predicates;
+- eligibility loss does not release obligation;
+- LP exits are not incorrectly blocked by loss of add eligibility;
+- unapproved identity perimeters cannot manufacture participant
+  identity;
+- StandbyHook cannot mutate registry membership.
 
-------------------------------------------------------------------------
+---
 
 ## 27. MVP Restrictions vs Production Generalization
 
 The following are deliberate reference-realization restrictions, not
 general Standby semantics.
 
-  ----------------------------------------------------------------------------------
-  MVP restriction               Why it exists           Production generalization /
-                                                        additional proof burden
-  ----------------------------- ----------------------- ----------------------------
-  Uniswap v4 shared AMM         Concrete ETHGlobal      New AMM requires equivalent
-                                target                  authoritative capacity and
-                                                        enforcement model
+---
 
-  One protected direction per   Reduces service/state   Bidirectional service
-  PES                           complexity              requires independent
-                                                        directional
-                                                        obligations/capacity and
-                                                        composition proof
+MVP restriction Why it exists Production generalization /
+additional proof burden
 
-  No initialized liquidity      Makes Supporting        Arbitrary topology requires
-  boundary strictly inside      Capacity and            authoritative tick traversal
-  domain                        prospective swaps       and equivalence proof
-                                single-region           
-                                derivations             
+---
 
-  Zero-liquidity configuration  Establishes known       Adoption of existing pools
-  bootstrap                     topology without        requires complete
-                                historical scan         authoritative topology
-                                                        discovery/admission proof
+Uniswap v4 shared AMM Concrete ETHGlobal New AMM requires equivalent
+target authoritative capacity and
+enforcement model
 
-  `MAX_LIVE_COMMITMENTS = 16`   Bounded gas and         Larger/unbounded sets
-                                deterministic scan      require scalable aggregate
-                                                        derivation without
-                                                        synchronization weakness
+One protected direction per Reduces service/state Bidirectional service
+PES complexity requires independent
+directional
+obligations/capacity and
+composition proof
 
-  Aggregate obligation derived, Avoids synchronization  Cached/accumulator model
-  not cached                    invariant at bounded    requires update-completeness
-                                size                    and reconciliation proof
+No initialized liquidity Makes Supporting Arbitrary topology requires
+boundary strictly inside Capacity and authoritative tick traversal
+domain prospective swaps and equivalence proof
+single-region  
+ derivations
 
-  One exact-output swap per O2  Preserves exact         Split/batched execution
-                                promised-result         requires exact multi-leg
-                                semantics and simple    attribution and atomic
-                                causal attribution      fulfillment proof
+Zero-liquidity configuration Establishes known Adoption of existing pools
+bootstrap topology without requires complete
+historical scan authoritative topology
+discovery/admission proof
 
-  No O2 batching/netting        Prevents delta          Batching requires per-cause
-                                contamination           accounting and isolation
-                                                        proof
+`MAX_LIVE_COMMITMENTS = 16` Bounded gas and Larger/unbounded sets
+deterministic scan require scalable aggregate
+derivation without
+synchronization weakness
 
-  Direct PoolManager delivery   Strong actual-delivery  Alternate delivery mechanism
-                                evidence                requires equivalent
-                                                        Beneficiary-receipt proof
+Aggregate obligation derived, Avoids synchronization Cached/accumulator model
+not cached invariant at bounded requires update-completeness
+size and reconciliation proof
 
-  Exerciser is payer            Removes                 Third-party payer requires
-                                payer-attribution       authenticated
-                                ambiguity               consent/payment semantics
+One exact-output swap per O2 Preserves exact Split/batched execution
+promised-result requires exact multi-leg
+semantics and simple attribution and atomic
+causal attribution fulfillment proof
 
-  Exact-transfer currencies     Makes v4 amount         Non-standard currencies
-                                correspond to actual    require independent
-                                delivery                actual-receipt measurement
+No O2 batching/netting Prevents delta Batching requires per-cause
+contamination accounting and isolation
+proof
 
-  Static LP fee compatibility   Keeps prospective       Dynamic fee support requires
-                                derivation              exact authoritative fee
-                                deterministic           resolution in prospective
-                                                        derivation
+Direct PoolManager delivery Strong actual-delivery Alternate delivery mechanism
+evidence requires equivalent
+Beneficiary-receipt proof
 
-  No custom accounting          Prevents amount         Custom accounting requires
-                                reinterpretation        derivation equivalence
-                                                        across hook deltas
+Exerciser is payer Removes Third-party payer requires
+payer-attribution authenticated
+ambiguity consent/payment semantics
 
-  Approved Universal Router /   Supplies trusted        Additional periphery
-  PositionManager               participant provenance  requires equivalent
-                                                        authenticated
-                                                        original-caller semantics
+Exact-transfer currencies Makes v4 amount Non-standard currencies
+correspond to actual require independent
+delivery actual-receipt measurement
 
-  Dedicated simple registry     Makes mutable           Rich
-                                permission source       KYC/attestation/governance
-                                explicit                systems require stable
-                                                        semantic-source and
-                                                        failure-mode proof
+Static LP fee compatibility Keeps prospective Dynamic fee support requires
+derivation exact authoritative fee
+deterministic resolution in prospective
+derivation
 
-  Single-owner demo registry    Hackathon simplicity    Production administration
-                                                        may use
-                                                        RBAC/multisig/governance
-                                                        without changing permission
-                                                        semantics
+No custom accounting Prevents amount Custom accounting requires
+reinterpretation derivation equivalence
+across hook deltas
 
-  Non-upgradeable semantic      Preserves               Upgradeable systems require
-  dependencies                  admission-time meaning  version binding or
-                                                        equivalent semantic
-                                                        continuity
+Approved Universal Router / Supplies trusted Additional periphery
+PositionManager participant provenance requires equivalent
+authenticated
+original-caller semantics
 
-  One-shot immutable PES        Eliminates              Production evolution should
-                                reinterpretation        use versioned service
-                                                        generations
+Dedicated simple registry Makes mutable Rich
+permission source KYC/attestation/governance
+explicit systems require stable
+semantic-source and
+failure-mode proof
 
-  No admin commitment release   Avoids new release      Production
-                                authority/cause         cancellation/invalidation
-                                                        requires canonical cause,
-                                                        authority, persistence, and
-                                                        backing-release verification
+Single-owner demo registry Hackathon simplicity Production administration
+may use
+RBAC/multisig/governance
+without changing permission
+semantics
 
-  No generic pause/deactivate   Avoids ambiguous        Production emergency
-                                obligation semantics    controls require explicit
-                                                        treatment of Validity,
-                                                        Exercisability, and
-                                                        continuing obligation
+Non-upgradeable semantic Preserves Upgradeable systems require
+dependencies admission-time meaning version binding or
+equivalent semantic
+continuity
 
-  EVM rollback for atomicity    Native implementation   Other execution environments
-                                mechanism               require equivalent
-                                                        economic-finality mechanism
-  ----------------------------------------------------------------------------------
+One-shot immutable PES Eliminates Production evolution should
+reinterpretation use versioned service
+generations
+
+No admin commitment release Avoids new release Production
+authority/cause cancellation/invalidation
+requires canonical cause,
+authority, persistence, and
+backing-release verification
+
+No generic pause/deactivate Avoids ambiguous Production emergency
+obligation semantics controls require explicit
+treatment of Validity,
+Exercisability, and
+continuing obligation
+
+EVM rollback for atomicity Native implementation Other execution environments
+mechanism require equivalent
+economic-finality mechanism
+
+---
 
 Production generalization must preserve the frozen canonical semantics
 rather than treating these MVP restrictions as the semantics themselves.
 
-------------------------------------------------------------------------
+---
 
 ## 28. Cross-System Composition
 
@@ -1683,14 +1739,14 @@ step.
 The only MVP causes that permanently eliminate future Capacity
 Obligation are:
 
--   qualifying fulfillment exhaustion;
--   temporal validity ending.
+- qualifying fulfillment exhaustion;
+- temporal validity ending.
 
 ### RR-SYS-4 --- Realization-Domain Continuity Independent of Current Obligation
 
 Service-domain/topology enforcement remains active even when (O=0).
 
-------------------------------------------------------------------------
+---
 
 ## 29. Implementation-Handoff Boundary
 
@@ -1698,19 +1754,19 @@ Service-domain/topology enforcement remains active even when (O=0).
 
 This realization determines:
 
--   authoritative components;
--   trust boundaries;
--   persistent economic facts;
--   derived facts;
--   service-establishment path;
--   permission sources;
--   Supporting Capacity derivation;
--   O1 behavior;
--   O2 behavior;
--   O3 behavior;
--   obligation-ending causes;
--   failure semantics;
--   bypass exclusions.
+- authoritative components;
+- trust boundaries;
+- persistent economic facts;
+- derived facts;
+- service-establishment path;
+- permission sources;
+- Supporting Capacity derivation;
+- O1 behavior;
+- O2 behavior;
+- O3 behavior;
+- obligation-ending causes;
+- failure semantics;
+- bypass exclusions.
 
 Implementation should not invent additional protocol-correctness
 decisions.
@@ -1720,14 +1776,14 @@ decisions.
 The following remain implementation-design choices where behavior is
 equivalent:
 
--   Solidity function names;
--   internal helper decomposition;
--   struct/storage packing;
--   custom errors;
--   event naming and indexing;
--   library boundaries;
--   equivalent guard implementation;
--   gas optimizations that do not alter authoritative semantics.
+- Solidity function names;
+- internal helper decomposition;
+- struct/storage packing;
+- custom errors;
+- event naming and indexing;
+- library boundaries;
+- equivalent guard implementation;
+- gas optimizations that do not alter authoritative semantics.
 
 ### RR-HANDOFF-3 --- MVP Restriction Explicitness
 
@@ -1735,31 +1791,31 @@ Every narrowing restriction must remain identified as a
 reference-realization choice and must not silently migrate into the
 general Standby canonical semantics.
 
-------------------------------------------------------------------------
+---
 
 ## 30. Reference-Realization Decision Index
 
 The frozen realization families represented by this artifact are:
 
--   **RR-SETUP-\*** --- pool establishment and pre-activation closure
--   **RR-CONFIG-\*** --- one-shot service configuration and activation
--   **RR-TOPO-\*** --- controlled topology and persistent domain
--   **RR-SC-\*** --- Supporting Capacity and prospective-state
-    derivation
--   **RR-STATE-\*** --- persistent PES basis and state minimality
--   **RR-PERM-\*** --- participant identity, eligibility, and registry
-    administration
--   **RR-O1-\*** --- commitment admission, bounded references,
-    persistence, and time semantics
--   **RR-O2-\*** --- exercise, execution, settlement, delivery, causal
-    proof, and finalization
--   **RR-O3-\*** --- shared-resource transition authorization
--   **RR-CTRL-\*** --- administrative/control boundaries
--   **RR-PATH-\*** --- authoritative-path and bypass closure
--   **RR-SYS-\*** --- cross-system composition
--   **RR-HANDOFF-\*** --- implementation-handoff sufficiency
+- **RR-SETUP-\*** --- pool establishment and pre-activation closure
+- **RR-CONFIG-\*** --- one-shot service configuration and activation
+- **RR-TOPO-\*** --- controlled topology and persistent domain
+- **RR-SC-\*** --- Supporting Capacity and prospective-state
+  derivation
+- **RR-STATE-\*** --- persistent PES basis and state minimality
+- **RR-PERM-\*** --- participant identity, eligibility, and registry
+  administration
+- **RR-O1-\*** --- commitment admission, bounded references,
+  persistence, and time semantics
+- **RR-O2-\*** --- exercise, execution, settlement, delivery, causal
+  proof, and finalization
+- **RR-O3-\*** --- shared-resource transition authorization
+- **RR-CTRL-\*** --- administrative/control boundaries
+- **RR-PATH-\*** --- authoritative-path and bypass closure
+- **RR-SYS-\*** --- cross-system composition
+- **RR-HANDOFF-\*** --- implementation-handoff sufficiency
 
-------------------------------------------------------------------------
+---
 
 ## 31. Draft Status and Required Final Gate
 
