@@ -72,6 +72,15 @@ library StandbyFixtureConfig {
     /// @dev The canonical backing-compatible ordinary protected swap output: 15,000.000000 MockUSDC.
     uint256 internal constant COMPATIBLE_ORDINARY_SWAP_OUTPUT = 15_000_000_000;
 
+    /// @dev The expected Supporting Capacity after the compatible ordinary swap, in raw MockUSDC units:
+    ///      65,000.000000 MockUSDC. Expected verification value only — never production truth.
+    uint256 internal constant EXPECTED_A2_S = 65_000_000_000;
+
     /// @dev The canonical backing-destructive protected swap attempt: 20,000.000000 MockUSDC.
     uint256 internal constant DESTRUCTIVE_SWAP_OUTPUT_ATTEMPT = 20_000_000_000;
+
+    /// @dev The expected prospective Supporting Capacity of the canonical backing-destructive attempt, in
+    ///      raw MockUSDC units: 45,000.000000 MockUSDC. It is a prospective value that must never become
+    ///      authoritative state, and an expected verification value only — never production truth.
+    uint256 internal constant EXPECTED_A3_PROSPECTIVE_S = 45_000_000_000;
 }
