@@ -2,9 +2,9 @@
 
 **Last Updated:** September 6, 2026
 **Project Phase:** Solidity / Reference Implementation
-**Current Implementation Slice:** F5 — Authoritative Derivation Kernel
-**Last Closed Gate:** G4 — Persistence / Bounded Reference Gate (CLOSED / PASS)
-**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 NOT STARTED
+**Current Implementation Slice:** F6A — Preliminary O3 Enforcement with O = 0 (NEXT AUTHORIZED / NOT STARTED)
+**Last Closed Gate:** G5 — Authoritative Derivation Gate (CLOSED / PASS)
+**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 COMPLETE — F6A NOT STARTED
 
 ---
 
@@ -39,15 +39,15 @@ The immediate objective is to implement the frozen Standby design as a determini
 
 Implementation proceeds through the verification-gated F0–F10 ladder defined in `implementation-plan.md`.
 
-The current slice is:
+The next authorized slice is:
 
-> **F5 — Authoritative Derivation Kernel**
+> **F6A — Preliminary O3 Enforcement with O = 0**
 
 The last closed gate is:
 
-> **G4 — Persistence / Bounded Reference Gate**
+> **G5 — Authoritative Derivation Gate**
 
-F0, F1, F2, F3 and F4 have been implemented, verified, and explicitly gate-closed. F5 is the next authorized implementation slice and has not yet started.
+F0, F1, F2, F3, F4 and F5 have been implemented, verified, and explicitly gate-closed. The targeted G3 revalidation required by the F5 prospective-derivability correction also passed, and G3 remains closed. F6A is the next authorized implementation slice and has not been started.
 
 ---
 
@@ -62,8 +62,8 @@ Current implementation sequence:
 | F2    | EligibilityRegistry                               | **COMPLETE — G2 CLOSED**     |
 | F3    | StandbyHook Trust + PES Configuration             | **COMPLETE — G3 CLOSED**     |
 | F4    | Commitment Storage + Bounded References           | **COMPLETE — G4 CLOSED**     |
-| F5    | Authoritative Derivation Kernel                   | **NEXT / NOT STARTED**       |
-| F6A   | Preliminary O3 Enforcement with O = 0             | NOT STARTED                  |
+| F5    | Authoritative Derivation Kernel                   | **COMPLETE — G5 CLOSED**     |
+| F6A   | Preliminary O3 Enforcement with O = 0             | **NEXT / NOT STARTED**       |
 | F7    | O1 Commitment Establishment                       | NOT STARTED                  |
 | F6B   | O3 Enforcement with Authentic O > 0               | NOT STARTED                  |
 | F8A   | O2 Authorization                                  | NOT STARTED                  |
@@ -359,13 +359,13 @@ G2 verified predicate independence, administrator authority, read fidelity, cros
 
 ## 10. Current Blocker
 
-There is no unresolved F0, F1, F2, F3 or F4 implementation responsibility and no open gate.
+There is no unresolved F0, F1, F2, F3, F4 or F5 implementation responsibility and no open gate.
 
 The next unstarted responsibility is:
 
-> **F5 — Authoritative Derivation Kernel.**
+> **F6A — Preliminary O3 Enforcement with O = 0.**
 
-F5 is authorized as the next implementation slice but has not been started.
+F6A is authorized as the next implementation slice but has not been started.
 
 Known limitations carried forward from F0, none of which blocked G0:
 
@@ -567,11 +567,11 @@ The root `CLAUDE.md` will define the repository operating rules and document aut
 
 ## 18. Next Action
 
-G4 has been reviewed and closed, so the next action is:
+G5 has been reviewed and closed, so the next action is:
 
-> **F5 — Authoritative Derivation Kernel.**
+> **F6A — Preliminary O3 Enforcement with O = 0.**
 
-F5 may begin when explicitly tasked. Its own verification gates govern advancement beyond the F5 boundary.
+F6A may begin when explicitly tasked. Its own verification gates govern advancement beyond the F6A boundary.
 
 ---
 
@@ -585,16 +585,18 @@ F5 may begin when explicitly tasked. Its own verification gates govern advanceme
 - F3 StandbyHook Trust + PES Configuration is complete and G3 is closed.
 - The Hook now has its validated trust/configuration basis and one-shot PES activation.
 - F4 Commitment Storage + Bounded Enforcement References is complete and G4 is closed.
-- No F5+ capacity derivation, O3, O1, or O2 behavior has been introduced.
+- F5 Authoritative Derivation Kernel is complete and G5 is closed.
+- The targeted G3 revalidation required by the F5 prospective-derivability correction passed, and G3 remains closed.
+- No F6A+ O3, O1, or O2 behavior has been introduced.
 
 **Current Gate**
 
-- G4 — CLOSED / PASS. No gate is currently open.
+- G5 — CLOSED / PASS. No gate is currently open.
 
 **Next Blocker**
 
-- F5 — Authoritative Derivation Kernel has not been started.
+- F6A — Preliminary O3 Enforcement with O = 0 has not been started.
 
 **Immediate Next Step**
 
-- Begin F5 when explicitly tasked.
+- Begin F6A when explicitly tasked.
