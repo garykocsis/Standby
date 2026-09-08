@@ -39,13 +39,14 @@ import {StandbyMath} from "./libraries/StandbyMath.sol";
 
 /// @title StandbyHook
 /// @notice The Standby Uniswap v4 Hook.
-/// @dev At implementation slice F8B this contract owns the Hook-wide immutable trust basis, one one-shot
+/// @dev At implementation slice F8D this contract owns the Hook-wide immutable trust basis, one one-shot
 ///      Protected Execution Service configuration, the authoritative commitment record store with its
 ///      bounded enforcement-reference index, the composition of the authoritative economic derivation
 ///      kernel, the admission or rejection of ordinary O3 backing-affecting pool transitions, the O1
 ///      admission that turns a proposed commitment into an authoritative binding one, the O2
-///      authorization that binds one exercise attempt into a transaction-scoped causal context, and the
-///      O2 classification and execution evidence that bind exactly one PoolManager swap to that context.
+///      authorization that binds one exercise attempt into a transaction-scoped causal context, the O2
+///      classification and execution evidence that bind exactly one PoolManager swap to that context, and
+///      the O2 finalization that converts that proof into the one durable fulfillment consequence.
 ///
 ///      Authorization is not exercise. It executes no swap, settles no input, delivers nothing to the
 ///      Beneficiary, fulfils nothing, and reduces no Remaining Entitlement. What authorization establishes
@@ -57,8 +58,16 @@ import {StandbyMath} from "./libraries/StandbyMath.sol";
 ///      causally bound to the active authorization actually produced exactly the authorized protected
 ///      output `q` — and nothing beyond that. It does not say that the input debt has been paid, that the
 ///      exerciser's cost bound was honoured, that the Beneficiary received anything, that the commitment
-///      was fulfilled, or that any Remaining Entitlement or Aggregate Capacity Obligation moved. No
-///      production path at this slice reduces Remaining Entitlement, so no fulfillment can occur.
+///      was fulfilled, or that any Remaining Entitlement or Aggregate Capacity Obligation moved.
+///
+///      Fulfillment is what finalization adds, and it is the only thing that reduces Remaining Entitlement.
+///      Everything before it is transaction-scoped evidence that would disappear with its transaction;
+///      finalization is where the Hook re-derives Supporting Capacity from the state the exercise actually
+///      produced, requires that state to remain backed once exactly the delivered obligation is released,
+///      reduces the bound commitment's remainder by exactly the bound `q`, and consumes the causal proof so
+///      that one execution can never fulfil twice. No other path — ordinary swap, liquidity action, direct
+///      transfer, settlement, delivery, expiry, or eligibility change — reduces Remaining Entitlement at
+///      all.
 ///
 ///      What separates a Standby exercise from an ordinary swap is therefore not who asked for it. It is
 ///      the conjunction of an existing Hook-owned authorization, the bound ExerciseRouter as the
@@ -208,9 +217,9 @@ contract StandbyHook is BaseHook {
 
     /// @notice The lifecycle position of the transaction-scoped O2 causal context.
     /// @dev The frozen O2 causal lifecycle is `EMPTY -> AUTHORIZED -> EXECUTED -> consumed/EMPTY`
-    ///      (`uniswap-v4-realization.md` §16). This slice owns the arcs up to `EXECUTED`; consumption
-    ///      belongs to finalization and is deliberately not expressible here, because declaring it early
-    ///      would let something claim a transition no code can make.
+    ///      (`uniswap-v4-realization.md` §16). Consumption needs no position of its own: a consumed context
+    ///      is the empty one, cleared field by field, so the lifecycle closes where it opened and there is
+    ///      no terminal marker for anything to mistake for surviving evidence.
     ///
     ///      Two of these positions are implementation guards rather than causal lifecycle positions, and
     ///      neither carries economic truth of its own.
@@ -407,6 +416,27 @@ contract StandbyHook is BaseHook {
         uint64 exercisableFrom,
         uint64 validUntil,
         uint256 enforcementReferenceSlot
+    );
+
+    /// @notice Emitted when a causally proven O2 exercise is finalized into durable fulfillment.
+    /// @dev Observational evidence of a fulfillment that has already become authoritative. It exists
+    ///      because the causal context that attributes the fulfillment is transaction-scoped and gone by
+    ///      the time anything could read it: what persists afterwards is a reduced Remaining Entitlement,
+    ///      and the reduced remainder alone does not say which exercise, which exerciser, or which delivery
+    ///      discharged it. Nothing later enforces against this event.
+    /// @param commitmentId The commitment whose Remaining Entitlement was reduced.
+    /// @param serviceId The Protected Execution Service the exercise was performed under.
+    /// @param beneficiary The authoritative Beneficiary the protected output was delivered to.
+    /// @param exerciser The authenticated originating exerciser.
+    /// @param q The protected-output quantity the fulfillment discharged.
+    /// @param remainingEntitlement The Remaining Entitlement left after the reduction.
+    event ExerciseFinalized(
+        uint256 indexed commitmentId,
+        PoolId indexed serviceId,
+        address indexed beneficiary,
+        address exerciser,
+        uint256 q,
+        uint128 remainingEntitlement
     );
 
     /*//////////////////////////////////////////////////////////////
@@ -728,6 +758,55 @@ contract StandbyHook is BaseHook {
     /// @param authorizedQuantity The protected-output quantity the authorization admits.
     error StandbyHook__ProtectedOutputNotExecuted(int256 actualProtectedOutput, uint256 authorizedQuantity);
 
+    /// @notice Thrown when finalization is attempted without a causally proven exercise to finalize.
+    /// @dev One condition covering every position that is not proof of a completed protected execution. An
+    ///      `EMPTY` context has no exercise at all — which is what a replayed finalization, an ordinary
+    ///      swap, a direct transfer, and a transaction that never exercised all present — while
+    ///      `AUTHORIZING`, `AUTHORIZED` and `EXECUTING` are exercises that have not produced anything yet.
+    ///      None of them may reduce Remaining Entitlement, so none of them is distinguished into a
+    ///      condition it does not have.
+    /// @param state The causal position the context was actually in.
+    error StandbyHook__NoProvenExerciseToFinalize(ExerciseAuthorizationState state);
+
+    /// @notice Thrown when finalization does not arrive through the ExerciseRouter the proof is bound to.
+    /// @dev Distinct from `StandbyHook__NotExerciseRouter`, which reports that an *authorization request*
+    ///      did not arrive through the configured ExerciseRouter, and from
+    ///      `StandbyHook__NotAuthorizedExerciseExecutor`, which reports the same about a proposed swap.
+    ///      This one reports that the account asking for durable fulfillment is not the coordinator the
+    ///      proven exercise was authorized through.
+    /// @param caller The account that attempted the finalization.
+    error StandbyHook__NotAuthorizedExerciseFinalizer(address caller);
+
+    /// @notice Thrown when finalization names a commitment other than the one the proof is bound to.
+    /// @dev The requested target is not authority and never selects what is finalized: the commitment is
+    ///      the one the authorization bound, and a request that names a different one is refused rather
+    ///      than redirected onto the bound commitment it did not ask for.
+    /// @param requestedCommitmentId The identity the finalization request named.
+    /// @param provenCommitmentId The identity the causal context is bound to.
+    error StandbyHook__NotTheProvenExerciseCommitment(uint256 requestedCommitmentId, uint256 provenCommitmentId);
+
+    /// @notice Thrown when the proven quantity exceeds the commitment's current Remaining Entitlement.
+    /// @dev Distinct from `StandbyHook__InvalidExerciseExtent`, which reports an inadmissible *requested*
+    ///      extent at authorization time. This one revalidates the already-authorized quantity against
+    ///      authoritative state re-read at finalization, so a fulfillment can never discharge more than the
+    ///      commitment still carries however the remainder came to be what it is.
+    /// @param q The proven protected-output quantity.
+    /// @param remainingEntitlement The authoritative current unfulfilled remainder.
+    error StandbyHook__FulfillmentExceedsRemainingEntitlement(uint256 q, uint128 remainingEntitlement);
+
+    /// @notice Thrown when the state a completed exercise actually produced would leave the service
+    ///         unbacked.
+    /// @dev The fourth and last backing rejection, and the only one comparing two facts about the present.
+    ///      `StandbyHook__InsufficientProspectiveExerciseBacking` compares a *predicted* post-exercise
+    ///      capacity against the obligation a complete exercise would leave, because authorization decides
+    ///      about a swap that has not happened. This one compares the Supporting Capacity of the actual
+    ///      post-execution PoolManager state against the obligation that remains once exactly the delivered
+    ///      quantity is released (RR-O2-20), because by now the swap has happened and the prediction is no
+    ///      longer the authority on anything.
+    /// @param actualCapacity The Supporting Capacity of the actual post-execution state.
+    /// @param finalObligation The Aggregate Capacity Obligation the fulfillment would leave.
+    error StandbyHook__InsufficientFinalExerciseBacking(uint256 actualCapacity, uint256 finalObligation);
+
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -1025,6 +1104,81 @@ contract StandbyHook is BaseHook {
                 beneficiary: authoritativeBeneficiary,
                 q: _q
             })
+        );
+    }
+
+    /// @notice Turns one causally proven, executed, settled and delivered O2 exercise into durable
+    ///         fulfillment.
+    /// @dev The last stage of O2, and the only one that changes persistent Standby economic state. What
+    ///      arrives here is transaction-local proof and nothing more: this Hook authorized exactly one
+    ///      exercise, the PoolManager produced exactly `q` for it, the exerciser paid the debt that
+    ///      execution created, and the Beneficiary holds the output. None of that has fulfilled anything,
+    ///      and if the transaction ended here none of it ever would — the proof is transaction-scoped and
+    ///      would vanish with the transaction that produced it, leaving a paid Beneficiary and an entitlement
+    ///      that had never been exercised.
+    ///
+    ///      The caller supplies one field and it is not an economic fact. `_commitmentId` is the target the
+    ///      request names, required to be exactly the commitment this Hook bound when it authorized the
+    ///      exercise; it never selects what is finalized. The quantity, the exerciser, the Beneficiary, and
+    ///      the service are recovered from the Hook-owned causal context (RR-O2-18), so there is no field
+    ///      through which any of them could be substituted, and the coordinator asking is required to be
+    ///      the one the proof is bound to.
+    ///
+    ///      The economic decision is made against the present rather than against the prediction that
+    ///      admitted the exercise. Authorization asked whether the proposed exercise *would* be safe; this
+    ///      asks whether the state the exercise *actually* produced is safe once exactly the delivered
+    ///      obligation is released. Both sides are therefore re-derived here: current Remaining Entitlement
+    ///      from the commitment record, Supporting Capacity from the actual post-execution PoolManager
+    ///      state, and the obligation from the current authoritative aggregate.
+    ///
+    ///      The consequence is one persistent write, after every check has passed. The admitted extent is
+    ///      never rewritten, and no fulfilled, completed, settled, delivered, or expired flag is introduced:
+    ///      complete fulfillment is `Remaining == 0`, and the released obligation needs no separate record
+    ///      because the aggregate is derived from the remainder that just changed. The bounded reference is
+    ///      deliberately left in place — an exhausted commitment simply stops contributing, and its slot
+    ///      becomes reclaimable by the same predicate that already governs reclamation.
+    ///
+    ///      The causal context is then consumed, once and completely. That is what makes one proven
+    ///      execution cause at most one entitlement reduction: what consumption leaves behind is the empty
+    ///      context, which proves nothing, so a replayed finalization has nothing to finalize. And it is
+    ///      the only path to this write — an ordinary swap, a liquidity action, a direct transfer to the
+    ///      Beneficiary, settlement alone, delivery alone, expiry, and an eligibility change all reach it
+    ///      through nothing.
+    /// @param _commitmentId The commitment the request asks to finalize.
+    function finalizeExercise(uint256 _commitmentId) external {
+        ExerciseAuthorizationContext memory context = _readExerciseAuthorization();
+
+        if (context.state != ExerciseAuthorizationState.EXECUTED) {
+            revert StandbyHook__NoProvenExerciseToFinalize(context.state);
+        }
+
+        if (msg.sender != context.exerciseRouter) revert StandbyHook__NotAuthorizedExerciseFinalizer(msg.sender);
+
+        if (_commitmentId != context.commitmentId) {
+            revert StandbyHook__NotTheProvenExerciseCommitment(_commitmentId, context.commitmentId);
+        }
+
+        uint128 remainingEntitlement = _commitments[context.commitmentId].remainingEntitlement;
+
+        if (context.q > remainingEntitlement) {
+            revert StandbyHook__FulfillmentExceedsRemainingEntitlement(context.q, remainingEntitlement);
+        }
+
+        _requireFinalExerciseBacking(context.q);
+
+        uint128 fulfilledRemainder = remainingEntitlement - context.q.toUint128();
+
+        _writeRemainingEntitlement(context.commitmentId, fulfilledRemainder);
+
+        _consumeExerciseAuthorization();
+
+        emit ExerciseFinalized(
+            context.commitmentId,
+            context.serviceId,
+            context.beneficiary,
+            context.exerciser,
+            context.q,
+            fulfilledRemainder
         );
     }
 
@@ -1656,6 +1810,52 @@ contract StandbyHook is BaseHook {
         capacity = _prospectiveSupportingCapacity(sqrtPriceX96, liquidity);
     }
 
+    /// @dev Requires the state a completed exercise actually produced to stay backed once `q` is released.
+    ///
+    ///      Both sides are authoritative and both are read now. The capacity side is current Supporting
+    ///      Capacity, derived by the one kernel from the actual post-execution PoolManager state — never the
+    ///      prospective value authorization was decided on, which was a prediction about a swap that had not
+    ///      happened yet and is not evidence about the state that exists (RR-O2-20). The obligation side is
+    ///      the current authoritative aggregate less the quantity this fulfillment is about to discharge,
+    ///      because Remaining Entitlement still carries `q` at this point and therefore so does the
+    ///      aggregate.
+    ///
+    ///      The subtraction is checked. Finalization has already established `q <= Remaining`, and a
+    ///      commitment carrying positive Remaining Entitlement that was valid when it was authorized is not
+    ///      permanently non-binding, so its reference cannot have been reclaimed and its full remainder is
+    ///      inside the aggregate: `q <= Remaining <= O` holds structurally. Failing closed on the arithmetic
+    ///      is the correct outcome should that ever cease to be true.
+    ///
+    ///      Exact sufficiency passes: a fulfillment that leaves capacity exactly equal to the obligation it
+    ///      leaves behind has preserved backing.
+    function _requireFinalExerciseBacking(uint256 _q) internal view {
+        uint256 actualCapacity = _supportingCapacity();
+        uint256 finalObligation = _aggregateObligation() - _q;
+
+        if (actualCapacity < finalObligation) {
+            revert StandbyHook__InsufficientFinalExerciseBacking(actualCapacity, finalObligation);
+        }
+    }
+
+    /// @dev Consumes the causal context, returning it to the empty position with every binding cleared.
+    ///
+    ///      The whole context is cleared rather than only its position. A context that reported `EMPTY`
+    ///      while still carrying a commitment, an actor, a Beneficiary, or a quantity would be exactly the
+    ///      reusable evidence consumption exists to destroy.
+    function _consumeExerciseAuthorization() internal {
+        _writeExerciseAuthorization(
+            ExerciseAuthorizationContext({
+                state: ExerciseAuthorizationState.EMPTY,
+                serviceId: PoolId.wrap(bytes32(0)),
+                commitmentId: 0,
+                exerciseRouter: address(0),
+                exerciser: address(0),
+                beneficiary: address(0),
+                q: 0
+            })
+        );
+    }
+
     /// @dev Writes the complete authorized causal context, replacing the in-flight marker.
     function _writeExerciseAuthorization(ExerciseAuthorizationContext memory _context) internal {
         _writeExerciseAuthorizationState(_context.state);
@@ -1802,8 +2002,9 @@ contract StandbyHook is BaseHook {
     ///
     ///      Remaining Entitlement is the one mutable commitment fact, and this is the only mechanism that
     ///      changes it. The mechanism applies no economic rule — it does not decide what the new value
-    ///      should be, does not require it to decrease, and does not bound it by the admitted extent. The
-    ///      authoritative reduction and its causal justification belong to the fulfillment slice.
+    ///      should be, does not require it to decrease, and does not bound it by the admitted extent.
+    ///      Whether a reduction is causally justified, and by how much, is `finalizeExercise`'s question,
+    ///      and it is answered in full before this runs.
     ///
     ///      Expiry and eligibility deliberately have no path to this function. A commitment that has
     ///      passed `validUntil`, or whose Beneficiary has lost eligibility, keeps the Remaining

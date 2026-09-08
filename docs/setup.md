@@ -612,8 +612,27 @@ The current Standby implementation baseline is:
 - **Optimizer Runs:** `800`
 - **Bytecode Hash:** `none`
 - **FFI:** disabled by default
+- **Local Forge execution gas limit:** `10000000000`
 
 The repository configuration in `foundry.toml` is authoritative for the active Foundry build settings.
+
+## Local Forge execution gas limit
+
+`gas_limit` is a local Foundry execution budget used by Forge tests and local script simulation. It is not a
+compiler, bytecode, EVM-target, deployed-contract, protocol, or deployed-chain gas-limit setting. It is
+raised above Foundry's default `1073741824` for one reason.
+
+The canonical StandbyHook deployment mines its address with the pinned `HookMiner.find`, which rehashes the
+entire Hook creation code and allocates a fresh buffer on every one of its `MAX_LOOP` = 160,444 candidate
+salts. Its cost is therefore quadratic in the iteration count, and under the default limit the pinned search
+runs out of gas after roughly 125,000 of its own iterations. A Hook whose valid salt lies beyond that point
+then fails to deploy for want of gas rather than for want of a salt, and which salt is valid changes with
+every edit to the Hook — so under the default limit any Solidity change can make an unrelated fixture fail
+to build its Hook.
+
+Standby's own bounded execution is enforced by explicit protocol bounds and reverts — for example
+`MAX_PROSPECTIVE_SWAP_STEPS` and `MAX_LIVE_COMMITMENTS` — never by exhausting a gas limit. Raising this
+value therefore weakens no verification and conceals no unbounded production path.
 
 A change to the compiler, EVM target, optimizer settings, or other execution-relevant configuration must be treated as a toolchain change and requires rerunning the verification gates that depend on that configuration.
 
@@ -718,6 +737,7 @@ optimizer = true
 optimizer_runs = 800
 bytecode_hash = none
 ffi = false
+gas_limit = 10000000000
 ```
 
 ---
