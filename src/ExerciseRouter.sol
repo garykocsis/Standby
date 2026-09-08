@@ -23,24 +23,24 @@ import {IActorAwarePeriphery} from "./interfaces/IActorAwarePeriphery.sol";
 
 /// @title ExerciseRouter
 /// @notice The designated O2 coordinator of one Protected Execution Service.
-/// @dev At implementation slice F8C this contract owns four of the five responsibilities the reference
+/// @dev At implementation slice F8D this contract owns all five of the responsibilities the reference
 ///      realization assigns it (`implementation-plan.md` §14.0): it accepts the external exercise request,
 ///      it preserves the originating exerciser across the call into the Hook so that the Hook can recover
 ///      an authenticated economic actor, it coordinates exactly one protected PoolManager execution for
-///      the authorization the Hook produced, and it resolves that execution — settling the actual input
-///      debt from the authenticated exerciser and having the PoolManager deliver exactly `q` directly to
-///      the authoritative Beneficiary. Causal finalization is a later slice and is deliberately absent.
+///      the authorization the Hook produced, it resolves that execution — settling the actual input debt
+///      from the authenticated exerciser and having the PoolManager deliver exactly `q` directly to the
+///      authoritative Beneficiary — and it asks the Hook to finalize the exercise it has resolved.
 ///
-///      Because it is absent, no production exercise completes at this slice, and that is enforced rather
-///      than merely observed. A completed exercise leaves the Hook's causal context `EXECUTED`, which is
-///      transaction-scoped: it disappears when the transaction ends. If this contract returned
-///      successfully from an unfinalized exercise, the swap, the payment, and the delivery would all
-///      survive while Remaining Entitlement stayed unreduced and the causal proof that could have reduced
-///      it evaporated — leaving the commitment exercisable again for the whole quantity it had already
-///      been exercised for. The top-level request therefore requires the causal context to have been
-///      consumed before it may return, and until finalization exists that requirement is one no exercise
-///      can satisfy. The barrier is a completion condition rather than a stub: finalization will consume
-///      the context inside the same unlock, and the same condition will then pass unchanged.
+///      Asking is the whole of its part in finalization. A completed exercise leaves the Hook's causal
+///      context `EXECUTED`, which is transaction-scoped: it disappears when the transaction ends. If this
+///      contract returned successfully from an unfinalized exercise, the swap, the payment, and the
+///      delivery would all survive while Remaining Entitlement stayed unreduced and the causal proof that
+///      could have reduced it evaporated — leaving the commitment exercisable again for the whole quantity
+///      it had already been exercised for. The top-level request therefore still requires the causal
+///      context to have been consumed before it may return; the request the Hook grants inside the same
+///      unlock is what now satisfies it, and the barrier itself is unchanged. What decides whether that
+///      request is granted is entirely the Hook's: the actual post-execution backing, the current
+///      Remaining Entitlement, and the identity of the commitment the proof is bound to.
 ///
 ///      It owns no Standby economic truth and cannot acquire any. It does not know whether the commitment
 ///      exists, who its Beneficiary is, who may exercise it, whether it is valid, whether it is
@@ -202,16 +202,17 @@ contract ExerciseRouter is IActorAwarePeriphery, IUnlockCallback {
     ///      hold a restored authorization it could execute against again. This one cannot, because it does
     ///      not survive the failure.
     ///
-    ///      What a resolved exercise establishes is Hook-owned and still narrow: the authorized swap
-    ///      produced exactly `q`, the exerciser paid exactly what the pool charged for it, and the
-    ///      Beneficiary holds exactly `q`. No commitment has been fulfilled and no Remaining Entitlement has
-    ///      been reduced — which is why the request may not return here. The completion barrier requires the
-    ///      Hook's causal context to have been consumed, and nothing at this slice can consume it.
+    ///      What a resolved exercise establishes is Hook-owned and narrow: the authorized swap produced
+    ///      exactly `q`, the exerciser paid exactly what the pool charged for it, and the Beneficiary holds
+    ///      exactly `q`. Fulfillment is a further question and a different one, and the Hook answers it —
+    ///      against the state the exercise actually produced — when this router asks it to finalize. Only a
+    ///      granted request consumes the causal context, which is what lets the completion barrier pass.
     ///
     ///      The originator context is cleared on the way out, so this router exposes no reusable identity
-    ///      afterwards. The Hook's own causal context is not cleared here, and must not be: whether it may
+    ///      afterwards. The Hook's own causal context is never cleared here, and must not be: whether it may
     ///      be replaced, consumed, or repeated is a Standby economic question the Hook owns, and a router
-    ///      that could clear it would be able to manufacture a second authorization.
+    ///      that could clear it would be able to manufacture a second authorization or fabricate a
+    ///      fulfillment it never earned.
     /// @param _commitmentId The commitment the caller is asking to exercise.
     /// @param _q The protected-output quantity the caller is asking to exercise.
     /// @param _maxInput The most input the caller is willing to pay for that quantity.
@@ -220,18 +221,19 @@ contract ExerciseRouter is IActorAwarePeriphery, IUnlockCallback {
 
         i_hook.authorizeExercise(_commitmentId, _q);
 
-        i_poolManager.unlock(abi.encode(_maxInput));
+        i_poolManager.unlock(abi.encode(_commitmentId, _maxInput));
 
         _requireFinalizedExercise();
 
         _endExerciserContext();
     }
 
-    /// @notice Performs and resolves the one protected execution the Hook's active authorization admits.
-    /// @dev Only the PoolManager may invoke this. The one thing it carries is the requesting exerciser's
-    ///      own cost bound, which the PoolManager returns verbatim from the unlock this router opened; it
-    ///      is request data, it is checked against authoritative accounting rather than trusted, and it is
-    ///      the only value that crosses this boundary. The swap itself is asked of the Hook rather than
+    /// @notice Performs, resolves and finalizes the one protected execution the Hook's authorization admits.
+    /// @dev Only the PoolManager may invoke this. What it carries is the two fields of the request that
+    ///      opened this unlock which the later stages need — the commitment the caller asked to exercise and
+    ///      the caller's own cost bound — returned verbatim by the PoolManager. Both are request data and
+    ///      neither is trusted: the bound is checked against authoritative accounting, and the commitment is
+    ///      checked against the Hook's own causal binding. The swap itself is asked of the Hook rather than
     ///      chosen here or forwarded from the request, and so are the two parties settlement moves value
     ///      between. Direction, exact-output mode, the quantity, the qualification boundary, the payer, and
     ///      the recipient are all Standby facts, and a router that composed its own version of them would
@@ -241,16 +243,27 @@ contract ExerciseRouter is IActorAwarePeriphery, IUnlockCallback {
     ///      operation on the authoritative PoolManager callback path against its own causal context, so this
     ///      contract can propose and never authorize.
     ///
+    ///      The three stages are ordered by what each one needs to be true, and the order is not
+    ///      negotiable: nothing may be settled before the Hook has proven the execution, nothing may be
+    ///      finalized before the Beneficiary has been delivered to, and the caller is authenticated as the
+    ///      PoolManager before either. The request payload is decoded after that authentication, so a
+    ///      direct caller is refused whatever it presents.
+    ///
     ///      It is `virtual` for one reason, and the reason is not extensibility: the F8B execution evidence
     ///      is verified against a committed real-PoolManager swap that has no settlement behind it, which
     ///      requires a test-only subclass to close the resulting deltas mechanically. Nothing in production
     ///      overrides it.
-    /// @param _data The encoded exercise-local cost bound of the request that opened this unlock.
+    /// @param _data The encoded finalization target and exercise-local cost bound of the request that
+    ///        opened this unlock.
     /// @return result The encoded balance delta of the performed execution.
     function unlockCallback(bytes calldata _data) external virtual returns (bytes memory result) {
         (PoolKey memory key, SwapParams memory params, BalanceDelta delta) = _executeAuthorizedExercise();
 
-        _resolveExecutedExercise(key, params, delta, abi.decode(_data, (uint256)));
+        (uint256 commitmentId, uint256 maxInput) = abi.decode(_data, (uint256, uint256));
+
+        _resolveExecutedExercise(key, params, delta, maxInput);
+
+        _finalizeExercise(commitmentId);
 
         result = abi.encode(delta);
     }
@@ -399,6 +412,28 @@ contract ExerciseRouter is IActorAwarePeriphery, IUnlockCallback {
         _requireResolvedDelta(_outputCurrency);
     }
 
+    /// @dev Asks the Hook to turn the exercise this unlock resolved into durable fulfillment.
+    ///
+    ///      The router requests and owns none of it. It names the commitment the request it is coordinating
+    ///      asked for, and the Hook requires that to be exactly the commitment its own causal context is
+    ///      bound to — so what crosses this boundary is a request target being checked against Standby's
+    ///      truth, never a router supplying one. Everything the fulfillment actually turns on is the Hook's
+    ///      and could not be supplied from here: the quantity, the Beneficiary, the exerciser, the service,
+    ///      the current Remaining Entitlement, the Supporting Capacity of the actual post-execution state,
+    ///      and the current Aggregate Capacity Obligation.
+    ///
+    ///      Nothing is caught. A refused finalization — an unbacked resulting state above all — unwinds the
+    ///      delivery, the settlement, the swap, and the authorization with it, which is the only acceptable
+    ///      outcome: a durable delivery whose fulfillment failed would be output paid for out of backing
+    ///      that was never released.
+    ///
+    ///      It is `virtual` for one reason, and the reason is not extensibility: proving that settlement and
+    ///      delivery fulfil nothing on their own requires a test-only subclass that omits exactly this step.
+    ///      Nothing in production overrides it.
+    function _finalizeExercise(uint256 _commitmentId) internal virtual {
+        i_hook.finalizeExercise(_commitmentId);
+    }
+
     /// @dev Requires this router's PoolManager delta in one currency to be fully closed.
     function _requireResolvedDelta(Currency _currency) internal view {
         int256 remainingDelta = i_poolManager.currencyDelta(address(this), _currency);
@@ -410,10 +445,11 @@ contract ExerciseRouter is IActorAwarePeriphery, IUnlockCallback {
 
     /// @dev Requires the exercise's causal proof to have been consumed before the request may return.
     ///
-    ///      The condition is stated as what completion actually requires rather than as a slice marker, so
-    ///      the slice that consumes the context satisfies it by doing its own work and nothing here has to
-    ///      be revisited or removed. Until then every production exercise fails here, atomically, with the
-    ///      swap, the settlement, and the delivery unwound with it.
+    ///      The condition is stated as what completion actually requires rather than as a slice marker,
+    ///      which is why it needed no revision when finalization arrived: a granted finalization consumes
+    ///      the context, and the same requirement passes unchanged. What it still refuses is an exercise
+    ///      that settled and delivered without being finalized — atomically, with the swap, the settlement,
+    ///      and the delivery unwound with it.
     ///
     ///      It is `virtual` for one reason, and the reason is not extensibility: verifying that the
     ///      settlement and delivery mechanics themselves are correct requires observing a committed

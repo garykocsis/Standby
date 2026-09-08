@@ -11,6 +11,7 @@ import {ExerciseRouter} from "../../src/ExerciseRouter.sol";
 import {StandbyHook} from "../../src/StandbyHook.sol";
 import {MockFixtureCurrency} from "../../src/mocks/MockFixtureCurrency.sol";
 
+import {NonFinalizingExerciseRouter} from "../harness/NonFinalizingExerciseRouter.sol";
 import {BaseExerciseSettlementTest} from "../shared/BaseExerciseSettlementTest.t.sol";
 
 /*//////////////////////////////////////////////////////////////
@@ -383,18 +384,23 @@ contract ExerciseSettlementTest is BaseExerciseSettlementTest {
     }
 }
 
-/// @notice Integration evidence that the production exercise path stays fail-closed until finalization
-///         exists (G8C-19).
+/// @notice Integration evidence that an unfinalized exercise stays fail-closed (G8C-19).
 /// @dev The only difference from the fixture above is the one that matters: the configured ExerciseRouter
-///      is the production `ExerciseRouter`, with its completion barrier intact. Everything else is
-///      identical — the same Hook, the same pool, the same liquidity, the same production commitment, the
-///      same funded and approved exerciser, and the same request.
+///      keeps the production completion barrier. Everything else is identical — the same Hook, the same
+///      pool, the same liquidity, the same production commitment, the same funded and approved exerciser,
+///      and the same request.
 ///
 ///      What that isolates is the barrier itself. The exercise gets all the way through authorization,
 ///      execution, settlement, and delivery, and is then refused for the one thing that has not happened:
 ///      nothing consumed the causal proof. Because the proof is transaction-scoped, committing here would
 ///      leave a paid exerciser, a paid Beneficiary, an unreduced entitlement, and no surviving evidence
 ///      that any of it happened — so the whole exercise unwinds instead.
+///
+///      Production reaches this state through nothing, because production asks the Hook to finalize every
+///      exercise it resolves. The router here is the production router with that request omitted and
+///      nothing else changed, which is what makes the requirement's failing case constructible at all. That
+///      a production exercise does finalize, and that the barrier then passes on its own, is evidence the
+///      F8D suites carry against the production router.
 contract ProductionExerciseCompletionTest is BaseExerciseSettlementTest {
     /*//////////////////////////////////////////////////////////////
                            STATE VARIABLES
@@ -410,11 +416,11 @@ contract ProductionExerciseCompletionTest is BaseExerciseSettlementTest {
                    G8C-19 — SLICE-COMPLETION SAFETY
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Proves a production exercise cannot commit while its causal proof is unconsumed.
+    /// @notice Proves an exercise cannot commit while its causal proof is unconsumed.
     /// @dev The refusal names the position the context was actually left in, which is what makes it a
     ///      completion condition rather than a placeholder: `EXECUTED` is exactly the state finalization
-    ///      will consume, and consuming it is what will let this same requirement pass.
-    function test_productionExercise_cannotCompleteWhileUnfinalized() public {
+    ///      consumes, and consuming it is what lets this same requirement pass unchanged.
+    function test_unfinalizedExercise_cannotComplete() public {
         uint256 commitmentId = _establishExercisable(CANONICAL_ENTITLEMENT);
 
         SettlementState memory before = _settlementState(commitmentExerciseAuthority, commitmentId);
@@ -433,7 +439,7 @@ contract ProductionExerciseCompletionTest is BaseExerciseSettlementTest {
     /// @notice Proves the refusal survives every request shape a caller could try.
     /// @dev A generous cost bound, an exact one, and a whole-remainder quantity are all refused identically.
     ///      The barrier is not about the request and cannot be routed around by making the request better.
-    function test_productionExercise_isRefusedWhateverTheRequest() public {
+    function test_unfinalizedExercise_isRefusedWhateverTheRequest() public {
         uint256 commitmentId = _establishExercisable(CANONICAL_ENTITLEMENT);
 
         SettlementState memory before = _settlementState(commitmentExerciseAuthority, commitmentId);
@@ -454,9 +460,9 @@ contract ProductionExerciseCompletionTest is BaseExerciseSettlementTest {
                          INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Activates the service with the production router, completion barrier intact.
+    /// @dev Activates the service with the production router minus its finalization request.
     function _resolveExerciseRouter() internal override returns (address router) {
-        configuredExerciseRouter = new ExerciseRouter(hook);
+        configuredExerciseRouter = new NonFinalizingExerciseRouter(hook);
 
         router = address(configuredExerciseRouter);
     }

@@ -1,10 +1,10 @@
 # Standby — Project Status
 
-**Last Updated:** September 7, 2026
+**Last Updated:** September 8, 2026
 **Project Phase:** Solidity / Reference Implementation
-**Current Implementation Slice:** F8D — O2 Causal Finalization / Remaining Entitlement Reduction (NEXT AUTHORIZED / NOT STARTED)
-**Last Closed Gate:** G8C — Authoritative Settlement / Delivery Gate (CLOSED / PASS)
-**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 COMPLETE — F6A COMPLETE — F7 COMPLETE — F6B COMPLETE — F8A COMPLETE — F8B COMPLETE — F8C COMPLETE — F8D NOT STARTED
+**Current Implementation Slice:** GI — Full Stateful Invariant Verification (NEXT AUTHORIZED / NOT STARTED)
+**Last Closed Gate:** G8D — Causal Finalization / Economic Finality Gate (CLOSED / PASS)
+**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 COMPLETE — F6A COMPLETE — F7 COMPLETE — F6B COMPLETE — F8A COMPLETE — F8B COMPLETE — F8C COMPLETE — F8D COMPLETE — GI NOT STARTED
 
 ---
 
@@ -41,15 +41,15 @@ Implementation proceeds through the verification-gated F0–F10 ladder defined i
 
 The next authorized slice is:
 
-> **F8D — O2 Causal Finalization / Remaining Entitlement Reduction**
+> **GI — Full Stateful Invariant Verification**
 
 The last closed gate is:
 
-> **G8C — Authoritative Settlement / Delivery Gate**
+> **G8D — Causal Finalization / Economic Finality Gate**
 
-F0, F1, F2, F3, F4, F5, F6A, F7, F6B, F8A, F8B and F8C have been implemented, verified, and explicitly gate-closed. The targeted G3 revalidation required by the F5 prospective-derivability correction also passed, and G3 remains closed.
+F0, F1, F2, F3, F4, F5, F6A, F7, F6B, F8A, F8B, F8C and F8D have been implemented, verified, and explicitly gate-closed. The targeted G3 revalidation required by the F5 prospective-derivability correction also passed, and G3 remains closed.
 
-F8C was reviewed independently and G8C was explicitly closed. F8D is the next authorized implementation slice and has not been started.
+F8D was reviewed independently and G8D was explicitly closed. GI is the next authorized implementation slice and has not been started.
 
 ---
 
@@ -71,8 +71,8 @@ Current implementation sequence:
 | F8A   | O2 Authorization                                  | **COMPLETE — G8A CLOSED**    |
 | F8B   | O2 Exact-Output Execution + Causal Evidence       | **COMPLETE — G8B CLOSED**    |
 | F8C   | O2 Input Settlement + Direct Beneficiary Delivery | **COMPLETE — G8C CLOSED**    |
-| F8D   | O2 Causal Finalization                            | **NEXT / NOT STARTED**       |
-| GI    | Full Stateful Invariant Verification              | NOT STARTED                  |
+| F8D   | O2 Causal Finalization                            | **COMPLETE — G8D CLOSED**    |
+| GI    | Full Stateful Invariant Verification              | **NEXT / NOT STARTED**       |
 | F9    | Canonical Acceptance                              | NOT STARTED                  |
 | F10   | Demo Instrumentation                              | NOT STARTED                  |
 | F9T   | Public Testnet Evidence                           | OPTIONAL / OFF CRITICAL PATH |
@@ -218,7 +218,7 @@ F7 adds the production O1 commitment-admission transition.
 
 F8A adds the production O2 authorization transition and its Hook-owned transaction-scoped causal context.
 F8B adds the production O2 execution classification and execution evidence. F8C adds the production O2
-input settlement and direct Beneficiary delivery. Finalization remains unimplemented.
+input settlement and direct Beneficiary delivery. F8D adds the production O2 causal finalization.
 
 ### `script/DeployStandbyHook.s.sol`
 
@@ -371,14 +371,14 @@ G2 verified predicate independence, administrator authority, read fidelity, cros
 
 ## 10. Current Blocker
 
-There is no unresolved F0, F1, F2, F3, F4, F5, F6A, F7, F6B, F8A, F8B or F8C implementation responsibility and no open gate.
+There is no unresolved F0, F1, F2, F3, F4, F5, F6A, F7, F6B, F8A, F8B, F8C or F8D implementation responsibility and no open gate.
 
 The next unstarted responsibility is:
 
-> **F8D — O2 Causal Finalization / Remaining Entitlement Reduction.**
+> **GI — Full Stateful Invariant Verification.**
 
-F8D is authorized as the next implementation slice but has not been started. No further downstream slice —
-GI — is authorized.
+GI is authorized as the next implementation slice but has not been started. No further downstream slice —
+F9 — is authorized.
 
 Known limitations carried forward from F0, none of which blocked G0:
 
@@ -389,7 +389,7 @@ Known limitations carried forward from F0, none of which blocked G0:
   node with `--broadcast`;
 - the four enabled Hook callbacks now enforce ordinary O3 admission, and refuse everything while no
   Protected Execution Service is configured. `StandbyHook` must still not be attached to a live pool
-  before its service is activated, and O2 finalization remains unimplemented.
+  before its service is activated.
 
 ---
 
@@ -581,11 +581,11 @@ The root `CLAUDE.md` will define the repository operating rules and document aut
 
 ## 18. Next Action
 
-G8C has been reviewed and closed, so the next action is:
+G8D has been reviewed and closed, so the next action is:
 
-> **F8D — O2 Causal Finalization / Remaining Entitlement Reduction.**
+> **GI — Full Stateful Invariant Verification.**
 
-F8D may begin when explicitly tasked. Its own verification gate governs advancement beyond the F8D boundary.
+GI may begin when explicitly tasked. Its own verification gate governs advancement beyond the GI boundary.
 
 ---
 
@@ -607,16 +607,16 @@ F8D may begin when explicitly tasked. Its own verification gate governs advancem
 - F8A O2 Authorization / Hook-Owned Causal Context is complete and G8A is closed.
 - F8B O2 Exact-Output Execution / Execution Evidence is complete and G8B is closed.
 - F8C O2 Input Settlement / Direct Beneficiary Delivery is complete and G8C is closed.
-- No O2 finalization behavior has been introduced.
+- F8D O2 Causal Finalization / Remaining Entitlement Reduction is complete and G8D is closed.
 
 **Current Gate**
 
-- G8C — CLOSED / PASS. No gate is currently open.
+- G8D — CLOSED / PASS. No gate is currently open.
 
 **Next Blocker**
 
-- F8D — O2 Causal Finalization / Remaining Entitlement Reduction has not been started.
+- GI — Full Stateful Invariant Verification has not been started.
 
 **Immediate Next Step**
 
-- Begin F8D when explicitly tasked.
+- Begin GI when explicitly tasked.
