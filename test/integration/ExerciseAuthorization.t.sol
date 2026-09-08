@@ -86,7 +86,7 @@ contract ExerciseAuthorizationTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId,
             commitmentExerciseAuthority,
             beneficiary,
@@ -102,13 +102,15 @@ contract ExerciseAuthorizationTest is BaseExerciseAuthorizationTest {
         );
     }
 
-    /// @notice Proves authorization alone fulfils nothing and changes no authoritative state.
-    /// @dev The whole F8A boundary, stated as one claim. After a successful authorization the commitment
-    ///      record is byte-for-byte what it was, the derived obligation is what it was, Supporting Capacity
-    ///      is what it was, the bounded index is what it was, no identity was consumed, and no protected
-    ///      output reached the Beneficiary, the Hook, or the router. An authorization is a capability, not
-    ///      a payment.
-    function test_successfulAuthorization_leavesEveryAuthoritativeFactUntouched() public {
+    /// @notice Proves a completed exercise request fulfils nothing and delivers nothing.
+    /// @dev The F8A boundary, stated against what a request now actually does. The request coordinates a
+    ///      protected execution as well as an authorization, so the pool genuinely moves — that is the
+    ///      exercise happening. What must not move is everything fulfillment would touch: the commitment
+    ///      record is byte-for-byte what it was, Remaining Entitlement is what it was, the derived
+    ///      obligation is what it was, the bounded index is what it was, no identity was consumed, and no
+    ///      protected output reached the Beneficiary or the Hook. Authorization is a capability and
+    ///      execution is evidence; neither is a payment.
+    function test_completedRequest_fulfilsNothingAndDeliversNothing() public {
         uint256 commitmentId = _establishExercisable(CANONICAL_ENTITLEMENT);
 
         StandbyHook.Commitment memory admitted = hook.commitment(commitmentId);
@@ -116,48 +118,26 @@ contract ExerciseAuthorizationTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
 
-        _assertNoAdmissionResidue(before, "authorization must change no authoritative state");
-        _assertCommitmentFactsUnchanged(commitmentId, admitted, "authorization must touch no commitment fact");
-        _assertDerivationsMatchOracles("post-authorization derivations must equal their reconstructions");
+        _assertCommitmentFactsUnchanged(commitmentId, admitted, "an exercise request must touch no commitment fact");
+        _assertDerivationsMatchOracles("post-exercise derivations must equal their reconstructions");
 
+        assertEq(hook.nextCommitmentId(), before.nextCommitmentId, "no commitment identity may be consumed");
         assertEq(
             hook.commitment(commitmentId).remainingEntitlement,
             CANONICAL_ENTITLEMENT,
-            "authorization must not reduce Remaining Entitlement"
+            "no Remaining Entitlement may be reduced"
         );
         assertEq(
             hook.aggregateObligation(),
             StandbyFixtureConfig.CANONICAL_COMMITMENT_Q,
-            "authorization must not reduce the authoritative obligation"
+            "no authoritative obligation may be reduced"
         );
-    }
+        assertEq(usdc.balanceOf(beneficiary), before.beneficiaryOutput, "the Beneficiary must receive nothing");
+        assertEq(usdc.balanceOf(address(hook)), before.hookOutput, "the Hook must take custody of nothing");
 
-    /// @notice Proves the causal context does not advance beyond AUTHORIZED at this slice.
-    /// @dev An ordinary backed swap runs while an authorization is live. It is enforced as the ordinary O3
-    ///      transition it is, against the full unreduced obligation, and the causal context comes out of it
-    ///      exactly as it went in. Nothing observes execution, nothing marks execution, and no entitlement
-    ///      moves: `AUTHORIZED -> EXECUTED` does not exist yet.
-    function test_authorizedContext_doesNotAdvanceBeyondAuthorized() public {
-        uint256 commitmentId = _establishExercisable(CANONICAL_ENTITLEMENT);
+        (bool referenced,) = _referenceSlotOf(commitmentId);
 
-        _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
-
-        _swapAs(eligibleTrader, _protectedExactOutputSwapParams(StandbyFixtureConfig.COMPATIBLE_ORDINARY_SWAP_OUTPUT));
-
-        _assertAuthorizationContext(
-            commitmentId,
-            commitmentExerciseAuthority,
-            beneficiary,
-            EXERCISE_Q,
-            "an ordinary transition may not advance or consume the causal context"
-        );
-
-        assertEq(hook.supportingCapacity(), StandbyFixtureConfig.EXPECTED_A2_S, "the ordinary swap was ordinary");
-        assertEq(
-            hook.aggregateObligation(),
-            StandbyFixtureConfig.CANONICAL_COMMITMENT_Q,
-            "no fulfillment may be attributed to an authorization"
-        );
+        assertTrue(referenced, "the bounded reference must survive an exercise that fulfils nothing");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -217,7 +197,7 @@ contract ExerciseAuthorizationTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(secondAuthority, second, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             second, secondAuthority, secondBeneficiary, EXERCISE_Q, "each authority may authorize its own commitment"
         );
     }
@@ -264,7 +244,7 @@ contract ExerciseAuthorizationTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId, commitmentExerciseAuthority, beneficiary, EXERCISE_Q, "exercisableFrom is inclusive"
         );
     }
@@ -279,7 +259,7 @@ contract ExerciseAuthorizationTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId, commitmentExerciseAuthority, beneficiary, EXERCISE_Q, "validUntil is exclusive"
         );
     }
@@ -373,7 +353,7 @@ contract ExerciseAuthorizationTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId, commitmentExerciseAuthority, beneficiary, EXERCISE_Q, "restored eligibility must authorize"
         );
     }
@@ -404,7 +384,7 @@ contract ExerciseAuthorizationTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId, commitmentExerciseAuthority, beneficiary, EXERCISE_Q, "0 < q < Remaining is permitted"
         );
     }
@@ -417,7 +397,7 @@ contract ExerciseAuthorizationTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, CANONICAL_ENTITLEMENT);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId, commitmentExerciseAuthority, beneficiary, CANONICAL_ENTITLEMENT, "q == Remaining is permitted"
         );
     }
@@ -461,7 +441,7 @@ contract ExerciseAuthorizationTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId, commitmentExerciseAuthority, beneficiary, EXERCISE_Q, "S' > O - q must be authorized"
         );
     }
@@ -490,7 +470,7 @@ contract ExerciseAuthorizationTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId, commitmentExerciseAuthority, beneficiary, EXERCISE_Q, "S' == O - q must be authorized"
         );
 
@@ -534,7 +514,7 @@ contract ExerciseAuthorizationTest is BaseExerciseAuthorizationTest {
         vm.expectRevert(StandbyHook.StandbyHook__ExerciseAuthorizationAlreadyActive.selector);
         _authorizeAs(secondAuthority, second, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             first,
             commitmentExerciseAuthority,
             beneficiary,
@@ -587,7 +567,7 @@ contract ExerciseAuthorizationTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId,
             commitmentExerciseAuthority,
             beneficiary,
@@ -626,7 +606,7 @@ contract ExerciseAuthorizationTransactionScopeTest is BaseExerciseAuthorizationT
 
         _authorizeAs(commitmentExerciseAuthority, carriedCommitmentId, CARRIED_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             carriedCommitmentId,
             commitmentExerciseAuthority,
             beneficiary,
@@ -650,7 +630,7 @@ contract ExerciseAuthorizationTransactionScopeTest is BaseExerciseAuthorizationT
     function test_theNextTransaction_mayAuthorizeAfresh() public {
         _authorizeAs(commitmentExerciseAuthority, carriedCommitmentId, CARRIED_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             carriedCommitmentId,
             commitmentExerciseAuthority,
             beneficiary,

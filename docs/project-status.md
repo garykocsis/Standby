@@ -2,9 +2,9 @@
 
 **Last Updated:** September 7, 2026
 **Project Phase:** Solidity / Reference Implementation
-**Current Implementation Slice:** F8B — O2 Exact-Output Execution / Execution Evidence (NEXT AUTHORIZED / NOT STARTED)
-**Last Closed Gate:** G8A — Authorization / Hook-Owned Causal Context Gate (CLOSED / PASS)
-**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 COMPLETE — F6A COMPLETE — F7 COMPLETE — F6B COMPLETE — F8A COMPLETE — F8B NOT STARTED
+**Current Implementation Slice:** F8C — Authoritative Settlement / Direct Beneficiary Delivery (NEXT AUTHORIZED / NOT STARTED)
+**Last Closed Gate:** G8B — O2 Exact-Output Execution / Execution-Evidence Gate (CLOSED / PASS)
+**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 COMPLETE — F6A COMPLETE — F7 COMPLETE — F6B COMPLETE — F8A COMPLETE — F8B COMPLETE — F8C NOT STARTED
 
 ---
 
@@ -41,15 +41,15 @@ Implementation proceeds through the verification-gated F0–F10 ladder defined i
 
 The next authorized slice is:
 
-> **F8B — O2 Exact-Output Execution / Execution Evidence**
+> **F8C — Authoritative Settlement / Direct Beneficiary Delivery**
 
 The last closed gate is:
 
-> **G8A — Authorization / Hook-Owned Causal Context Gate**
+> **G8B — O2 Exact-Output Execution / Execution-Evidence Gate**
 
-F0, F1, F2, F3, F4, F5, F6A, F7, F6B and F8A have been implemented, verified, and explicitly gate-closed. The targeted G3 revalidation required by the F5 prospective-derivability correction also passed, and G3 remains closed.
+F0, F1, F2, F3, F4, F5, F6A, F7, F6B, F8A and F8B have been implemented, verified, and explicitly gate-closed. The targeted G3 revalidation required by the F5 prospective-derivability correction also passed, and G3 remains closed.
 
-F8A was reviewed independently and G8A was explicitly closed. F8B is the next authorized implementation slice and has not been started.
+F8B was reviewed independently and G8B was explicitly closed. F8C is the next authorized implementation slice and has not been started.
 
 ---
 
@@ -69,8 +69,8 @@ Current implementation sequence:
 | F7    | O1 Commitment Establishment                       | **COMPLETE — G7 CLOSED**     |
 | F6B   | O3 Enforcement with Authentic O > 0               | **COMPLETE — G6B CLOSED**    |
 | F8A   | O2 Authorization                                  | **COMPLETE — G8A CLOSED**    |
-| F8B   | O2 Exact-Output Execution + Causal Evidence       | **NEXT / NOT STARTED**       |
-| F8C   | O2 Input Settlement + Direct Beneficiary Delivery | NOT STARTED                  |
+| F8B   | O2 Exact-Output Execution + Causal Evidence       | **COMPLETE — G8B CLOSED**    |
+| F8C   | O2 Input Settlement + Direct Beneficiary Delivery | **NEXT / NOT STARTED**       |
 | F8D   | O2 Causal Finalization                            | NOT STARTED                  |
 | GI    | Full Stateful Invariant Verification              | NOT STARTED                  |
 | F9    | Canonical Acceptance                              | NOT STARTED                  |
@@ -217,7 +217,8 @@ inert completion plumbing.
 F7 adds the production O1 commitment-admission transition.
 
 F8A adds the production O2 authorization transition and its Hook-owned transaction-scoped causal context.
-O2 execution, settlement, delivery and finalization remain unimplemented.
+F8B adds the production O2 execution classification and execution evidence. Settlement, delivery and
+finalization remain unimplemented.
 
 ### `script/DeployStandbyHook.s.sol`
 
@@ -370,14 +371,14 @@ G2 verified predicate independence, administrator authority, read fidelity, cros
 
 ## 10. Current Blocker
 
-There is no unresolved F0, F1, F2, F3, F4, F5, F6A, F7, F6B or F8A implementation responsibility and no open gate.
+There is no unresolved F0, F1, F2, F3, F4, F5, F6A, F7, F6B, F8A or F8B implementation responsibility and no open gate.
 
 The next unstarted responsibility is:
 
-> **F8B — O2 Exact-Output Execution / Execution Evidence.**
+> **F8C — Authoritative Settlement / Direct Beneficiary Delivery.**
 
-F8B is authorized as the next implementation slice but has not been started. No further downstream slice —
-F8C or F8D — is authorized.
+F8C is authorized as the next implementation slice but has not been started. No further downstream slice —
+F8D — is authorized.
 
 Known limitations carried forward from F0, none of which blocked G0:
 
@@ -388,7 +389,7 @@ Known limitations carried forward from F0, none of which blocked G0:
   node with `--broadcast`;
 - the four enabled Hook callbacks now enforce ordinary O3 admission, and refuse everything while no
   Protected Execution Service is configured. `StandbyHook` must still not be attached to a live pool
-  before its service is activated, and O2 execution, settlement, delivery and finalization remain
+  before its service is activated, and O2 settlement, delivery and finalization remain
   unimplemented.
 
 ---
@@ -581,11 +582,11 @@ The root `CLAUDE.md` will define the repository operating rules and document aut
 
 ## 18. Next Action
 
-G8A has been reviewed and closed, so the next action is:
+G8B has been reviewed and closed, so the next action is:
 
-> **F8B — O2 Exact-Output Execution / Execution Evidence.**
+> **F8C — Authoritative Settlement / Direct Beneficiary Delivery.**
 
-F8B may begin when explicitly tasked. Its own verification gate governs advancement beyond the F8B boundary.
+F8C may begin when explicitly tasked. Its own verification gate governs advancement beyond the F8C boundary.
 
 ---
 
@@ -605,16 +606,17 @@ F8B may begin when explicitly tasked. Its own verification gate governs advancem
 - F7 O1 Commitment Admission is complete and G7 is closed.
 - F6B O3 Enforcement with Authentic O > 0 is complete and G6B is closed.
 - F8A O2 Authorization / Hook-Owned Causal Context is complete and G8A is closed.
-- No O2 execution, settlement, delivery or finalization behavior has been introduced.
+- F8B O2 Exact-Output Execution / Execution Evidence is complete and G8B is closed.
+- No O2 settlement, delivery or finalization behavior has been introduced.
 
 **Current Gate**
 
-- G8A — CLOSED / PASS. No gate is currently open.
+- G8B — CLOSED / PASS. No gate is currently open.
 
 **Next Blocker**
 
-- F8B — O2 Exact-Output Execution / Execution Evidence has not been started.
+- F8C — Authoritative Settlement / Direct Beneficiary Delivery has not been started.
 
 **Immediate Next Step**
 
-- Begin F8B when explicitly tasked.
+- Begin F8C when explicitly tasked.

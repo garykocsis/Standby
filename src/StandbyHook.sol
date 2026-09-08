@@ -39,19 +39,34 @@ import {StandbyMath} from "./libraries/StandbyMath.sol";
 
 /// @title StandbyHook
 /// @notice The Standby Uniswap v4 Hook.
-/// @dev At implementation slice F8A this contract owns the Hook-wide immutable trust basis, one one-shot
+/// @dev At implementation slice F8B this contract owns the Hook-wide immutable trust basis, one one-shot
 ///      Protected Execution Service configuration, the authoritative commitment record store with its
 ///      bounded enforcement-reference index, the composition of the authoritative economic derivation
 ///      kernel, the admission or rejection of ordinary O3 backing-affecting pool transitions, the O1
-///      admission that turns a proposed commitment into an authoritative binding one, and the O2
-///      authorization that binds one exercise attempt into a transaction-scoped causal context.
+///      admission that turns a proposed commitment into an authoritative binding one, the O2
+///      authorization that binds one exercise attempt into a transaction-scoped causal context, and the
+///      O2 classification and execution evidence that bind exactly one PoolManager swap to that context.
 ///
 ///      Authorization is not exercise. It executes no swap, settles no input, delivers nothing to the
-///      Beneficiary, fulfils nothing, and reduces no Remaining Entitlement, so no production path reduces
-///      Remaining Entitlement and no fulfillment can occur at this slice. What authorization establishes
+///      Beneficiary, fulfils nothing, and reduces no Remaining Entitlement. What authorization establishes
 ///      is that exactly one commitment, one authenticated exerciser, one authoritative Beneficiary, one
 ///      service, one ExerciseRouter, and one quantity have been bound together by the Hook before any
 ///      protected execution could be attempted.
+///
+///      Execution evidence is not fulfillment either. `EXECUTED` says that the unique PoolManager swap
+///      causally bound to the active authorization actually produced exactly the authorized protected
+///      output `q` — and nothing beyond that. It does not say that the input debt has been paid, that the
+///      exerciser's cost bound was honoured, that the Beneficiary received anything, that the commitment
+///      was fulfilled, or that any Remaining Entitlement or Aggregate Capacity Obligation moved. No
+///      production path at this slice reduces Remaining Entitlement, so no fulfillment can occur.
+///
+///      What separates a Standby exercise from an ordinary swap is therefore not who asked for it. It is
+///      the conjunction of an existing Hook-owned authorization, the bound ExerciseRouter as the
+///      PoolManager operation sender, the configured service pool, the protected direction, exact-output
+///      mode, the exact authorized quantity, the configured qualification boundary — and then, separately
+///      and afterwards, authoritative PoolManager evidence that the swap actually produced `q`. Router
+///      identity alone, `hookData` alone, an authorization alone, a protected-direction swap alone, and a
+///      `q`-shaped amount alone each classify nothing.
 ///
 ///      O1 admission is where Aggregate Capacity Obligation first becomes positive. Enforcement was never
 ///      told that: it obtains the obligation from the same derivation that reported zero while no
@@ -193,21 +208,33 @@ contract StandbyHook is BaseHook {
 
     /// @notice The lifecycle position of the transaction-scoped O2 causal context.
     /// @dev The frozen O2 causal lifecycle is `EMPTY -> AUTHORIZED -> EXECUTED -> consumed/EMPTY`
-    ///      (`uniswap-v4-realization.md` §16). This slice owns exactly one arc of it, `EMPTY -> AUTHORIZED`,
-    ///      so `EXECUTED` and consumption are deliberately not expressible here: they belong to the
-    ///      execution and finalization slices, and declaring them early would let something claim a
-    ///      transition no code can make.
+    ///      (`uniswap-v4-realization.md` §16). This slice owns the arcs up to `EXECUTED`; consumption
+    ///      belongs to finalization and is deliberately not expressible here, because declaring it early
+    ///      would let something claim a transition no code can make.
     ///
-    ///      `AUTHORIZING` is not a causal lifecycle position. It is the in-flight marker of one
-    ///      authorization attempt, written before the authorization consults anything outside this Hook and
-    ///      replaced by `AUTHORIZED` only if every predicate succeeds. It exists so that an overlapping
-    ///      authorization cannot arise during those external reads, and it can never be observed by a
-    ///      successful call: a completed authorization reads `AUTHORIZED`, and a failed one reverts, which
-    ///      discards the transient write with everything else.
+    ///      Two of these positions are implementation guards rather than causal lifecycle positions, and
+    ///      neither carries economic truth of its own.
+    ///
+    ///      `AUTHORIZING` is the in-flight marker of one authorization attempt, written before the
+    ///      authorization consults anything outside this Hook and replaced by `AUTHORIZED` only if every
+    ///      predicate succeeds. It exists so that an overlapping authorization cannot arise during those
+    ///      external reads, and it can never be observed by a successful call: a completed authorization
+    ///      reads `AUTHORIZED`, and a failed one reverts, which discards the transient write with
+    ///      everything else.
+    ///
+    ///      `EXECUTING` means exactly one thing: the unique `beforeSwap` corresponding to this
+    ///      authorization has been accepted as the exact O2 swap, and its corresponding authoritative
+    ///      `afterSwap` is now expected. It is what binds the accepted proposal to the evidence that
+    ///      follows it, and it is the reason no execution nonce, execution hash, or swap ledger is needed:
+    ///      the PoolManager itself orders and authenticates the two callbacks, and the Hook already holds
+    ///      the facts both of them must agree with. A matching `beforeSwap` reaches `EXECUTING` and can
+    ///      reach nothing further, because a proposal is not an execution.
     enum ExerciseAuthorizationState {
         EMPTY,
         AUTHORIZING,
-        AUTHORIZED
+        AUTHORIZED,
+        EXECUTING,
+        EXECUTED
     }
 
     /// @notice The complete transaction-scoped causal context of one authorized exercise attempt.
@@ -654,6 +681,53 @@ contract StandbyHook is BaseHook {
         uint256 prospectiveCapacity, uint256 prospectiveObligation
     );
 
+    /// @notice Thrown when a swap is proposed while the O2 causal context admits no protected execution.
+    /// @dev The causal exclusion zone, reported as one condition. Once an authorization exists the service
+    ///      is inside an O2 operation, and the only swap that may proceed is the exact protected execution
+    ///      that authorization admits — so a swap arriving against an unresolved `AUTHORIZING`,
+    ///      `EXECUTING`, or `EXECUTED` context is refused rather than quietly re-classified as an ordinary
+    ///      O3 transition it would then be enforced as under the wrong rule.
+    /// @param state The causal position the context was actually in.
+    error StandbyHook__ExerciseExecutionNotAuthorized(ExerciseAuthorizationState state);
+
+    /// @notice Thrown when the PoolManager operation sender is not the ExerciseRouter the context bound.
+    /// @dev Distinct from `StandbyHook__NotExerciseRouter`, which reports that an *authorization request*
+    ///      did not arrive through the configured ExerciseRouter. This one reports that the account that
+    ///      asked the PoolManager to perform the swap is not the router the active authorization is bound
+    ///      to. It is a required conjunct of O2 classification and never sufficient on its own.
+    /// @param sender The callback sender that proposed the swap.
+    error StandbyHook__NotAuthorizedExerciseExecutor(address sender);
+
+    /// @notice Thrown when a proposed swap is not the exact protected execution the authorization admits.
+    /// @dev One rejection for one requirement: the proposed swap must be the canonical protected execution
+    ///      reconstructed from the immutable service basis and the authorized quantity. Direction,
+    ///      exact-output mode, the exact quantity, and the qualification boundary are that one shape, and a
+    ///      swap that differs in any of them is not the authorized execution. The proposed shape is
+    ///      reported, because the admitted one is derivable from the service and the causal context.
+    /// @param zeroForOne The proposed swap direction.
+    /// @param amountSpecified The proposed amount, negative for exact input and positive for exact output.
+    /// @param sqrtPriceLimitX96 The proposed square-root price limit.
+    error StandbyHook__NotTheAuthorizedProtectedExecution(
+        bool zeroForOne, int256 amountSpecified, uint160 sqrtPriceLimitX96
+    );
+
+    /// @notice Thrown when execution evidence is offered while no protected execution is in flight.
+    /// @dev Execution evidence is only meaningful for a swap this Hook already accepted as the exact O2
+    ///      execution. A context that is not `EXECUTING` has no accepted swap awaiting evidence, so
+    ///      `EMPTY -> EXECUTED`, `AUTHORIZED -> EXECUTED`, and a second `EXECUTED` transition are all
+    ///      refused here rather than being distinguished into separate conditions they do not have.
+    /// @param state The causal position the context was actually in.
+    error StandbyHook__NoProtectedExecutionInFlight(ExerciseAuthorizationState state);
+
+    /// @notice Thrown when the actual protected output of the executed swap is not exactly `q`.
+    /// @dev The authoritative execution evidence, and the one requirement that separates a swap that was
+    ///      requested from a swap that happened. The output is taken from the PoolManager's own
+    ///      `BalanceDelta` on the configured protected-output side, so a partial exact-output execution, an
+    ///      output on the wrong currency side, and a wrong-signed delta all fail the same comparison.
+    /// @param actualProtectedOutput The protected-output amount the PoolManager actually produced.
+    /// @param authorizedQuantity The protected-output quantity the authorization admits.
+    error StandbyHook__ProtectedOutputNotExecuted(int256 actualProtectedOutput, uint256 authorizedQuantity);
+
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -967,6 +1041,33 @@ contract StandbyHook is BaseHook {
         context = _readExerciseAuthorization();
     }
 
+    /// @notice Returns the one protected execution the active authorization admits.
+    /// @dev The single production expression of what a Standby exercise executes. The ExerciseRouter has to
+    ///      propose a swap to the PoolManager, and the shape of that swap is not the router's to choose:
+    ///      the pool, the protected direction, exact-output mode, the quantity, and the qualification
+    ///      boundary `P_Q` are all facts this Hook already owns (RR-O2-7, RR-O2-8). Reconstructing them
+    ///      here — from the same function the authorization backing derivation uses — is what makes the
+    ///      authorized execution and the executable execution the same object rather than two descriptions
+    ///      that have to be kept in agreement.
+    ///
+    ///      Reading this grants nothing. It is a proposal, and the proposal is validated again on the
+    ///      authoritative PoolManager callback path against the causal context, so a caller that ignores
+    ///      what it read here is refused exactly as a caller that never read it.
+    ///
+    ///      It reverts unless an authorization is currently AUTHORIZED, because outside that position there
+    ///      is no admitted execution to describe.
+    /// @return key The configured service pool the execution is performed against.
+    /// @return params The exact protected exact-output swap the authorization admits.
+    function authorizedProtectedExecution() external view returns (PoolKey memory key, SwapParams memory params) {
+        ExerciseAuthorizationContext memory context = _readExerciseAuthorization();
+
+        if (context.state != ExerciseAuthorizationState.AUTHORIZED) {
+            revert StandbyHook__ExerciseExecutionNotAuthorized(context.state);
+        }
+
+        (key, params) = (_service.poolKey, _canonicalProtectedExecution(context.q));
+    }
+
     /// @notice Returns the complete authoritative Protected Execution Service basis.
     /// @dev Before activation every field reads as its zero value and `configured` is false.
     /// @return service The persisted service basis.
@@ -1127,12 +1228,62 @@ contract StandbyHook is BaseHook {
                          INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Decides whether a proposed ordinary swap may become an authoritative pool transition.
+    /// @dev Classifies a proposed swap and decides whether it may become an authoritative pool transition.
     ///
-    ///      Every reachable swap here is an ordinary O3 transition. O2 classification requires an
-    ///      authoritative exercise causal context, no production path can establish one yet, and router
-    ///      identity alone never classifies a swap as O2 — a commitment-shaped payload from any router is
-    ///      ordinary activity.
+    ///      Classification is by causal context, never by who asked. With no O2 operation in progress every
+    ///      swap is an ordinary O3 transition and is enforced as one, whoever routed it and whatever
+    ///      `hookData` it carries. Once an authorization exists the service is inside an O2 causal
+    ///      exclusion zone, and the only swap that may proceed is the exact protected execution that
+    ///      authorization admits; anything else is refused rather than quietly re-classified.
+    ///
+    ///      The exclusion is not tidiness. O2 was authorized against the prospective post-fulfillment
+    ///      condition `S' >= O - q`, while an ordinary transition must satisfy `S' >= O`. Letting a
+    ///      mismatching swap fall through to the ordinary rule while an authorization is unresolved would
+    ///      break the causal continuity between the state the authorization was decided on and the
+    ///      execution it authorized.
+    function _beforeSwap(address _sender, PoolKey calldata _key, SwapParams calldata _params, bytes calldata)
+        internal
+        virtual
+        override
+        returns (bytes4 selector, BeforeSwapDelta delta, uint24 lpFeeOverride)
+    {
+        _requireConfiguredServicePool(_key);
+
+        if (_exerciseAuthorizationState() == ExerciseAuthorizationState.EMPTY) {
+            _requireAdmissibleOrdinarySwap(_sender, _params);
+        } else {
+            _beginProtectedExecution(_sender, _params);
+        }
+
+        (selector, delta, lpFeeOverride) = (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+    }
+
+    /// @dev Completes a swap callback: inert for an ordinary transition, authoritative evidence for O2.
+    ///
+    ///      For an ordinary O3 transition this is completion plumbing and nothing else. The backing
+    ///      decision was already made, from derived prospective state, before the transition became
+    ///      authoritative, and nothing here is execution evidence, fulfillment proof, or settlement.
+    ///
+    ///      For the one protected execution this Hook accepted, it is the only place execution evidence can
+    ///      come from. The PoolManager has performed the swap by the time this runs and hands over its own
+    ///      `BalanceDelta`, which is the sole authoritative statement of what the pool actually produced.
+    ///
+    ///      It takes no delta, because the Hook declares no return-delta permission.
+    function _afterSwap(
+        address _sender,
+        PoolKey calldata _key,
+        SwapParams calldata _params,
+        BalanceDelta _delta,
+        bytes calldata
+    ) internal virtual override returns (bytes4 selector, int128 hookDelta) {
+        if (_exerciseAuthorizationState() != ExerciseAuthorizationState.EMPTY) {
+            _recordProtectedExecution(_sender, _key, _params, _delta);
+        }
+
+        (selector, hookDelta) = (IHooks.afterSwap.selector, int128(0));
+    }
+
+    /// @dev Decides whether a proposed ordinary swap may become an authoritative pool transition.
     ///
     ///      The decision sequence separates four questions that must never merge. Whether the callback is
     ///      authentic: `onlyPoolManager` answers that before this runs. Whether the transition belongs to
@@ -1155,15 +1306,7 @@ contract StandbyHook is BaseHook {
     ///      change, so the same comparison covers both, and covering both is what makes the enforcement
     ///      surface complete rather than merely correct on the expected path. This is not symmetry for its
     ///      own sake: there is no second formula here, only one authoritative derivation used once.
-    function _beforeSwap(address _sender, PoolKey calldata _key, SwapParams calldata _params, bytes calldata)
-        internal
-        view
-        virtual
-        override
-        returns (bytes4 selector, BeforeSwapDelta delta, uint24 lpFeeOverride)
-    {
-        _requireConfiguredServicePool(_key);
-
+    function _requireAdmissibleOrdinarySwap(address _sender, SwapParams calldata _params) internal view {
         if (_sender != i_trustedUniversalRouter) revert StandbyHook__UntrustedSwapPerimeter(_sender);
 
         address actor = _authenticatedActor(_sender);
@@ -1173,27 +1316,136 @@ contract StandbyHook is BaseHook {
         (uint160 sqrtPriceX96, uint128 liquidity) = _prospectiveSwapState(_params);
 
         _requireProspectiveBacking(sqrtPriceX96, liquidity);
-
-        (selector, delta, lpFeeOverride) = (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    /// @dev Completes an ordinary O3 swap callback and does nothing else.
+    /// @dev Accepts a proposed swap as the one protected execution the active authorization admits.
     ///
-    ///      `afterSwap` is enabled because the exercise slice will need it, so every permitted ordinary
-    ///      swap invokes it and it cannot be left failing closed. What it must not do is acquire that later
-    ///      responsibility early: it is not execution evidence, not fulfillment proof, not settlement, and
-    ///      it mutates nothing. The backing decision was already made, from derived prospective state,
-    ///      before the transition became authoritative.
+    ///      What it establishes is exactly this: the swap in front of the PoolManager right now is the
+    ///      execution attempt this Hook authorized. What it deliberately does not establish is that any
+    ///      execution happened. Router intent is not execution proof, a requested exact output is not an
+    ///      actual output, and a successful `beforeSwap` is not AMM execution — so this reaches `EXECUTING`
+    ///      and can reach nothing further.
     ///
-    ///      It takes no delta, because the Hook declares no return-delta permission.
-    function _afterSwap(address, PoolKey calldata, SwapParams calldata, BalanceDelta, bytes calldata)
-        internal
-        pure
-        virtual
-        override
-        returns (bytes4 selector, int128 hookDelta)
-    {
-        (selector, hookDelta) = (IHooks.afterSwap.selector, int128(0));
+    ///      The state requirement is the whole causal restriction in one place. `AUTHORIZED` is the only
+    ///      position that admits a swap: an `AUTHORIZING` context has not decided yet, an `EXECUTING` one
+    ///      already has its swap in flight, and an `EXECUTED` one has already had it. A second swap, a
+    ///      nested swap, and a swap after execution are therefore the same refusal rather than three
+    ///      special cases.
+    function _beginProtectedExecution(address _sender, SwapParams calldata _params) internal {
+        ExerciseAuthorizationContext memory context = _readExerciseAuthorization();
+
+        if (context.state != ExerciseAuthorizationState.AUTHORIZED) {
+            revert StandbyHook__ExerciseExecutionNotAuthorized(context.state);
+        }
+
+        _requireAuthorizedProtectedExecution(_sender, _params, context);
+
+        _writeExerciseAuthorizationState(ExerciseAuthorizationState.EXECUTING);
+    }
+
+    /// @dev Establishes that the accepted protected execution actually produced exactly `q`.
+    ///
+    ///      This is the only transition to execution evidence, and it consumes exactly one authoritative
+    ///      fact that no earlier stage had: the PoolManager's own `BalanceDelta` for the swap it has just
+    ///      performed. Nothing else here is new. The context is the one the authorization wrote, and the
+    ///      callback facts are revalidated against it rather than assumed from the presence of `EXECUTING`,
+    ///      so evidence cannot be satisfied by an unrelated callback that merely arrives while a protected
+    ///      execution is in flight.
+    ///
+    ///      The comparison is exact and signed. Only the protected-output side of the delta counts, only a
+    ///      positive amount is output owed to the swap caller, and only exactly `q` is the authorized
+    ///      quantity — so a partial exact-output execution, an amount on the input side, and a wrong-signed
+    ///      delta all fail it. A partial execution is a failure of the complete O2 rather than a smaller
+    ///      exercise (RR-O2-9), and refusing it here reverts the containing transaction with it.
+    ///
+    ///      What `EXECUTED` does not mean is as load-bearing as what it does. The input debt is unpaid, the
+    ///      exerciser's cost bound is unexamined, the Beneficiary has received nothing, the commitment is
+    ///      unfulfilled, and Remaining Entitlement and Aggregate Capacity Obligation are untouched.
+    function _recordProtectedExecution(
+        address _sender,
+        PoolKey calldata _key,
+        SwapParams calldata _params,
+        BalanceDelta _delta
+    ) internal {
+        ExerciseAuthorizationContext memory context = _readExerciseAuthorization();
+
+        if (context.state != ExerciseAuthorizationState.EXECUTING) {
+            revert StandbyHook__NoProtectedExecutionInFlight(context.state);
+        }
+
+        _requireConfiguredServicePool(_key);
+        _requireAuthorizedProtectedExecution(_sender, _params, context);
+
+        int256 actualProtectedOutput = _actualProtectedOutput(_delta);
+
+        if (actualProtectedOutput != context.q.toInt256()) {
+            revert StandbyHook__ProtectedOutputNotExecuted(actualProtectedOutput, context.q);
+        }
+
+        _writeExerciseAuthorizationState(ExerciseAuthorizationState.EXECUTED);
+    }
+
+    /// @dev Requires a callback swap to be exactly the protected execution a causal context admits.
+    ///
+    ///      Classification is conjunctive, and this is the conjunction. The account that asked the
+    ///      PoolManager to perform the swap must be the ExerciseRouter the context bound — necessary, never
+    ///      sufficient — and the proposed swap must equal the canonical protected execution reconstructed
+    ///      from the immutable service basis and the authorized quantity. That single equality is where
+    ///      protected direction, exact-output mode, the exact quantity `q`, and the configured
+    ///      qualification boundary `P_Q` are all decided, because they are not four independent policies:
+    ///      they are the one execution the service defines, and comparing against it is what makes an
+    ///      alternative price limit, an exact-input substitution, an opposite direction, and a `q ± 1`
+    ///      substitution the same rejection.
+    ///
+    ///      The pool is not compared here. Every path into this function has already established that the
+    ///      callback concerns the configured service pool, and a context's `serviceId` is that same pool by
+    ///      construction: the service is one-shot and immutable, and the authorization stamped the context
+    ///      with it.
+    function _requireAuthorizedProtectedExecution(
+        address _sender,
+        SwapParams calldata _params,
+        ExerciseAuthorizationContext memory _context
+    ) internal view {
+        if (_sender != _context.exerciseRouter) revert StandbyHook__NotAuthorizedExerciseExecutor(_sender);
+
+        SwapParams memory authorized = _canonicalProtectedExecution(_context.q);
+
+        if (
+            _params.zeroForOne != authorized.zeroForOne || _params.amountSpecified != authorized.amountSpecified
+                || _params.sqrtPriceLimitX96 != authorized.sqrtPriceLimitX96
+        ) {
+            revert StandbyHook__NotTheAuthorizedProtectedExecution(
+                _params.zeroForOne, _params.amountSpecified, _params.sqrtPriceLimitX96
+            );
+        }
+    }
+
+    /// @dev Reads the protected-output side of an executed swap's authoritative PoolManager delta.
+    ///
+    ///      Which side that is follows from the configured protected direction and from nothing else:
+    ///      protected `zeroForOne` takes currency0 in and produces currency1, protected `oneForZero` is its
+    ///      mirror. The value is returned signed and unmodified, because its sign is authoritative — a
+    ///      positive amount is currency the PoolManager owes the swap caller, which is what "produced" means
+    ///      here, and a negative amount is currency the caller owes. Taking an absolute value would turn a
+    ///      debt into a delivery.
+    function _actualProtectedOutput(BalanceDelta _delta) internal view returns (int256 actualProtectedOutput) {
+        actualProtectedOutput = _service.protectedZeroForOne ? _delta.amount1() : _delta.amount0();
+    }
+
+    /// @dev Reconstructs the one protected execution the service admits for a quantity.
+    ///
+    ///      The protected execution is not a free choice and is never taken from a request. It is the one
+    ///      the frozen realization defines: the service's own protected direction, exact-output for exactly
+    ///      `_q`, bounded by the configured qualification boundary `P_Q` (RR-O2-7, RR-O2-8). Every consumer
+    ///      of that shape — the authorization backing derivation, the execution classifier, the evidence
+    ///      revalidation, and the router's own proposal — resolves through this one reconstruction, so the
+    ///      quantity that was authorized and the quantity that is executable are the same question.
+    function _canonicalProtectedExecution(uint256 _q) internal view returns (SwapParams memory params) {
+        params = SwapParams({
+            zeroForOne: _service.protectedZeroForOne,
+            amountSpecified: _q.toInt256(),
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(_service.tickQ)
+        });
     }
 
     /// @dev Decides whether a proposed liquidity addition may become an authoritative pool transition.
@@ -1391,23 +1643,15 @@ contract StandbyHook is BaseHook {
 
     /// @dev Derives the Supporting Capacity the canonical protected exercise of exactly `q` would leave.
     ///
-    ///      The protected execution is not a free choice and is not taken from the request. It is the one
-    ///      the frozen realization defines: the service's own protected direction, exact-output for exactly
-    ///      `q`, bounded by the configured qualification boundary `P_Q` (RR-O2-7, RR-O2-8). Reconstructing
-    ///      it from the immutable service basis is what makes the authorized quantity and the executable
-    ///      quantity the same question.
+    ///      The execution being measured is the one the service admits, reconstructed by the single
+    ///      production reconstruction rather than restated here — so the swap this authorization is decided
+    ///      against is byte-for-byte the swap the execution classifier will later require.
     ///
     ///      No arithmetic happens here. The prospective state comes from the same F5 derivation ordinary
     ///      transitions use, and the same capacity kernel measures it, so an authorization decision and an
     ///      enforcement decision can never disagree about what a state is worth.
     function _prospectiveExerciseCapacity(uint256 _q) internal view returns (uint256 capacity) {
-        SwapParams memory params = SwapParams({
-            zeroForOne: _service.protectedZeroForOne,
-            amountSpecified: _q.toInt256(),
-            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(_service.tickQ)
-        });
-
-        (uint160 sqrtPriceX96, uint128 liquidity) = _prospectiveSwapState(params);
+        (uint160 sqrtPriceX96, uint128 liquidity) = _prospectiveSwapState(_canonicalProtectedExecution(_q));
 
         capacity = _prospectiveSupportingCapacity(sqrtPriceX96, liquidity);
     }

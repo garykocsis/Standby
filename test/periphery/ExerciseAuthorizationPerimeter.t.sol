@@ -140,7 +140,7 @@ contract ExerciseAuthorizationPerimeterTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId,
             commitmentExerciseAuthority,
             beneficiary,
@@ -166,7 +166,7 @@ contract ExerciseAuthorizationPerimeterTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId, commitmentExerciseAuthority, beneficiary, EXERCISE_Q, "the authority itself may authorize"
         );
     }
@@ -189,7 +189,7 @@ contract ExerciseAuthorizationPerimeterTest is BaseExerciseAuthorizationTest {
         vm.prank(commitmentExerciseAuthority, unauthorizedExerciser);
         configuredExerciseRouter.exercise(commitmentId, EXERCISE_Q, UNCONSTRAINED_MAX_INPUT);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId,
             commitmentExerciseAuthority,
             beneficiary,
@@ -282,8 +282,9 @@ contract ExerciseAuthorizationPerimeterTest is BaseExerciseAuthorizationTest {
     /// @notice Proves a `maxInput` of zero authorizes exactly what any other value authorizes.
     /// @dev Zero is the value most likely to be mistaken for a constraint — it would refuse every real
     ///      exercise if anything enforced it — and it changes nothing here. `maxInput` is the exerciser's
-    ///      own cost bound against an authoritative input debt, and there is no debt at this slice, so the
-    ///      field reaches no code and no decision.
+    ///      own cost bound against the authoritative input debt the executed swap produces, and enforcing
+    ///      it belongs to F8C together with settling that debt, so the field reaches no code and no
+    ///      decision.
     function test_maxInputOfZero_authorizesIdentically() public {
         uint256 commitmentId = _establishExercisable(EXERCISE_ENTITLEMENT);
 
@@ -355,7 +356,7 @@ contract ExerciseAuthorizationPerimeterTest is BaseExerciseAuthorizationTest {
         vm.expectRevert(ExerciseRouter.ExerciseRouter__NoActiveExerciseContext.selector);
         configuredExerciseRouter.msgSender();
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId,
             commitmentExerciseAuthority,
             beneficiary,
@@ -375,7 +376,7 @@ contract ExerciseAuthorizationPerimeterTest is BaseExerciseAuthorizationTest {
     ///      and the commitment's own remainder. A `maxInput` that shifted any of them — a different `q`, a
     ///      different Beneficiary, a different attribution, a different `S` or `O` — would show up here.
     function _assertMaxInputIndependentAuthorization(uint256 _commitmentId) internal view {
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             _commitmentId,
             commitmentExerciseAuthority,
             beneficiary,
