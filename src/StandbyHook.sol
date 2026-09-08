@@ -39,12 +39,19 @@ import {StandbyMath} from "./libraries/StandbyMath.sol";
 
 /// @title StandbyHook
 /// @notice The Standby Uniswap v4 Hook.
-/// @dev At implementation slice F7 this contract owns the Hook-wide immutable trust basis, one one-shot
+/// @dev At implementation slice F8A this contract owns the Hook-wide immutable trust basis, one one-shot
 ///      Protected Execution Service configuration, the authoritative commitment record store with its
 ///      bounded enforcement-reference index, the composition of the authoritative economic derivation
-///      kernel, the admission or rejection of ordinary O3 backing-affecting pool transitions, and the O1
-///      admission that turns a proposed commitment into an authoritative binding one. Exercise does not
-///      exist yet, so no production path reduces Remaining Entitlement and no fulfillment can occur.
+///      kernel, the admission or rejection of ordinary O3 backing-affecting pool transitions, the O1
+///      admission that turns a proposed commitment into an authoritative binding one, and the O2
+///      authorization that binds one exercise attempt into a transaction-scoped causal context.
+///
+///      Authorization is not exercise. It executes no swap, settles no input, delivers nothing to the
+///      Beneficiary, fulfils nothing, and reduces no Remaining Entitlement, so no production path reduces
+///      Remaining Entitlement and no fulfillment can occur at this slice. What authorization establishes
+///      is that exactly one commitment, one authenticated exerciser, one authoritative Beneficiary, one
+///      service, one ExerciseRouter, and one quantity have been bound together by the Hook before any
+///      protected execution could be attempted.
 ///
 ///      O1 admission is where Aggregate Capacity Obligation first becomes positive. Enforcement was never
 ///      told that: it obtains the obligation from the same derivation that reported zero while no
@@ -184,6 +191,59 @@ contract StandbyHook is BaseHook {
         uint256 steps;
     }
 
+    /// @notice The lifecycle position of the transaction-scoped O2 causal context.
+    /// @dev The frozen O2 causal lifecycle is `EMPTY -> AUTHORIZED -> EXECUTED -> consumed/EMPTY`
+    ///      (`uniswap-v4-realization.md` §16). This slice owns exactly one arc of it, `EMPTY -> AUTHORIZED`,
+    ///      so `EXECUTED` and consumption are deliberately not expressible here: they belong to the
+    ///      execution and finalization slices, and declaring them early would let something claim a
+    ///      transition no code can make.
+    ///
+    ///      `AUTHORIZING` is not a causal lifecycle position. It is the in-flight marker of one
+    ///      authorization attempt, written before the authorization consults anything outside this Hook and
+    ///      replaced by `AUTHORIZED` only if every predicate succeeds. It exists so that an overlapping
+    ///      authorization cannot arise during those external reads, and it can never be observed by a
+    ///      successful call: a completed authorization reads `AUTHORIZED`, and a failed one reverts, which
+    ///      discards the transient write with everything else.
+    enum ExerciseAuthorizationState {
+        EMPTY,
+        AUTHORIZING,
+        AUTHORIZED
+    }
+
+    /// @notice The complete transaction-scoped causal context of one authorized exercise attempt.
+    /// @dev These are the minimum causal bindings of `uniswap-v4-realization.md` §16 and nothing else. The
+    ///      context exists so that a later stage can prove that the execution in front of it belongs to
+    ///      exactly this authorized attempt — this commitment, this actor, this Beneficiary, this service,
+    ///      this quantity — and it carries no fact that is not needed for that proof.
+    ///
+    ///      Nothing derived is bound here. Supporting Capacity, prospective Supporting Capacity, Aggregate
+    ///      Capacity Obligation, Remaining Entitlement, validity, exercisability, and Beneficiary
+    ///      eligibility were all evaluated to reach this context and none of them is stored in it: a
+    ///      snapshot would be a second, silently ageing source of truth for a quantity that must be
+    ///      re-derived from authoritative facts wherever it is used.
+    ///
+    ///      Immutable service semantics are referenced through `serviceId` rather than copied, exactly as
+    ///      commitment records reference them. The protected execution this context authorizes is therefore
+    ///      fully reconstructible without duplicating anything: the bound service fixes the pool, the
+    ///      protected direction, and the qualifying execution boundary `P_Q`, and `q` fixes the exact
+    ///      output of the single protected exact-output swap it admits.
+    /// @param state The lifecycle position of the context.
+    /// @param serviceId The Protected Execution Service the authorized exercise belongs to.
+    /// @param commitmentId The one commitment the authorization is for.
+    /// @param exerciseRouter The authenticated ExerciseRouter the request arrived through.
+    /// @param exerciser The authenticated originating exerciser.
+    /// @param beneficiary The Beneficiary resolved from authoritative commitment state.
+    /// @param q The authorized protected-output quantity.
+    struct ExerciseAuthorizationContext {
+        ExerciseAuthorizationState state;
+        PoolId serviceId;
+        uint256 commitmentId;
+        address exerciseRouter;
+        address exerciser;
+        address beneficiary;
+        uint256 q;
+    }
+
     /*//////////////////////////////////////////////////////////////
                            STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
@@ -206,6 +266,29 @@ contract StandbyHook is BaseHook {
     ///      would exceed it is refused rather than truncated, because a truncated traversal would report
     ///      a prospective state the pool would never actually reach.
     uint256 public constant MAX_PROSPECTIVE_SWAP_STEPS = 16;
+
+    /// @dev The base transient slot of the O2 causal context, with one field per successive slot.
+    ///
+    ///      Transient storage is the realization of the frozen requirement that O2 causal evidence is
+    ///      transaction-scoped rather than persistent lifecycle state (`uniswap-v4-realization.md` §16,
+    ///      `implementation-plan.md` §14.2). Two of its properties are doing real work here rather than
+    ///      merely saving gas. The context cannot outlive its transaction, so an authorization can never be
+    ///      replayed in a later one however the transaction that created it ended. And a revert discards
+    ///      every write, so a failed authorization leaves nothing usable behind without any unwinding code
+    ///      to get wrong.
+    ///
+    ///      The base is a namespaced hash, so the seven context slots cannot collide with any other
+    ///      transient consumer that follows the same convention.
+    bytes32 private constant EXERCISE_AUTHORIZATION_BASE_SLOT = keccak256("standby.StandbyHook.exerciseAuthorization");
+
+    /// @dev Field offsets from `EXERCISE_AUTHORIZATION_BASE_SLOT`.
+    uint256 private constant AUTHORIZATION_STATE_OFFSET = 0;
+    uint256 private constant AUTHORIZATION_SERVICE_ID_OFFSET = 1;
+    uint256 private constant AUTHORIZATION_COMMITMENT_ID_OFFSET = 2;
+    uint256 private constant AUTHORIZATION_EXERCISE_ROUTER_OFFSET = 3;
+    uint256 private constant AUTHORIZATION_EXERCISER_OFFSET = 4;
+    uint256 private constant AUTHORIZATION_BENEFICIARY_OFFSET = 5;
+    uint256 private constant AUTHORIZATION_Q_OFFSET = 6;
 
     /// @notice The only account authorized to configure and activate the Protected Execution Service.
     /// @dev Semantically distinct from commitment-establishment authority, exercise authority,
@@ -503,6 +586,74 @@ contract StandbyHook is BaseHook {
     /// @param obligation The authoritative current Aggregate Capacity Obligation.
     error StandbyHook__InsufficientProspectiveBacking(uint256 prospectiveCapacity, uint256 obligation);
 
+    /// @notice Thrown when an O2 authorization does not arrive through the configured ExerciseRouter.
+    /// @dev The exercise perimeter is per service, not realization-wide: it is the ExerciseRouter fixed by
+    ///      activation, and neither trusted ordinary-transition perimeter substitutes for it.
+    /// @param caller The account that attempted the authorization.
+    error StandbyHook__NotExerciseRouter(address caller);
+
+    /// @notice Thrown when an O2 authorization is attempted while another is already unresolved.
+    /// @dev Covers both shapes the restriction has to close: a second authorization attempted after one has
+    ///      already succeeded in this transaction, and a nested one attempted while an authorization is
+    ///      still deciding. Neither may overwrite, coexist with, or substitute for the active context.
+    error StandbyHook__ExerciseAuthorizationAlreadyActive();
+
+    /// @notice Thrown when the targeted commitment belongs to a different Protected Execution Service.
+    /// @dev Distinct from `StandbyHook__PoolIsNotConfiguredService`, which reports that a *callback*
+    ///      concerned the wrong pool. This one reports that an authentic commitment record names a service
+    ///      other than the one this Hook operates, so its admitted semantics are not the semantics this
+    ///      authorization would be evaluated under.
+    /// @param commitmentId The targeted identity.
+    /// @param commitmentServiceId The service the commitment was admitted under.
+    error StandbyHook__CommitmentNotInService(uint256 commitmentId, PoolId commitmentServiceId);
+
+    /// @notice Thrown when the authenticated exerciser is not the commitment's exercise authority.
+    /// @dev The exerciser reported here is the originating account the configured ExerciseRouter
+    ///      authenticated, never the router itself and never a caller-supplied address.
+    /// @param commitmentId The targeted identity.
+    /// @param exerciser The authenticated originating exerciser.
+    error StandbyHook__NotCommitmentExerciseAuthority(uint256 commitmentId, address exerciser);
+
+    /// @notice Thrown when the targeted commitment is no longer temporally valid.
+    /// @param commitmentId The targeted identity.
+    /// @param validUntil The admitted timestamp at which the entitlement stops being valid.
+    /// @param timestamp The authoritative current time.
+    error StandbyHook__CommitmentNotValid(uint256 commitmentId, uint64 validUntil, uint256 timestamp);
+
+    /// @notice Thrown when the targeted commitment's admitted exercise window is not currently open.
+    /// @dev Distinct from `StandbyHook__CommitmentNotValid`. A commitment whose window has not opened is
+    ///      fully valid and fully binding; it is simply not yet exercisable, and nothing about that
+    ///      releases backing or changes a term.
+    /// @param commitmentId The targeted identity.
+    /// @param exercisableFrom The admitted timestamp from which exercise may become possible.
+    /// @param validUntil The admitted timestamp at which the entitlement stops being valid.
+    /// @param timestamp The authoritative current time.
+    error StandbyHook__CommitmentNotExercisable(
+        uint256 commitmentId, uint64 exercisableFrom, uint64 validUntil, uint256 timestamp
+    );
+
+    /// @notice Thrown when a requested exercise quantity is outside the permissible extent.
+    /// @dev One requirement, `0 < q <= Remaining`, so one rejection. Both operands are reported, which is
+    ///      what makes the two failing shapes — nothing requested, and more requested than remains —
+    ///      distinguishable without splitting one predicate into two.
+    /// @param q The requested protected-output quantity.
+    /// @param remainingEntitlement The authoritative unfulfilled remainder.
+    error StandbyHook__InvalidExerciseExtent(uint256 q, uint128 remainingEntitlement);
+
+    /// @notice Thrown when the complete successful exercise would leave the service unbacked.
+    /// @dev Distinct from both other backing rejections, because the compared quantities are different
+    ///      facts. `StandbyHook__InsufficientProspectiveBacking` compares a derived post-transition
+    ///      Supporting Capacity against the *current* obligation, because an ordinary transition changes
+    ///      the pool and not the obligation. `StandbyHook__InsufficientAdmissionBacking` compares present
+    ///      capacity against the obligation admission would create, because O1 changes the obligation and
+    ///      not the pool. This one compares the capacity the protected exact-output execution would leave
+    ///      against the obligation a complete successful exercise would leave, because O2 changes both.
+    /// @param prospectiveCapacity The Supporting Capacity the protected exact-output execution would leave.
+    /// @param prospectiveObligation The Aggregate Capacity Obligation a complete successful O2 would leave.
+    error StandbyHook__InsufficientProspectiveExerciseBacking(
+        uint256 prospectiveCapacity, uint256 prospectiveObligation
+    );
+
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -720,6 +871,100 @@ contract StandbyHook is BaseHook {
             _validUntil,
             slot
         );
+    }
+
+    /// @notice Authorizes one exercise attempt and creates the Hook-owned transaction-scoped causal context.
+    /// @dev The first stage of O2, and deliberately only the first. It executes no swap, moves no price,
+    ///      settles no input, delivers nothing to the Beneficiary, fulfils nothing, reduces no Remaining
+    ///      Entitlement, and reduces no Aggregate Capacity Obligation. What it produces is a causal
+    ///      capability: proof, for the rest of this transaction, that this Hook bound exactly one
+    ///      commitment, one authenticated exerciser, one authoritative Beneficiary, one service, one
+    ///      ExerciseRouter, and one quantity together before any protected execution could be attempted.
+    ///
+    ///      The caller supplies two things and neither of them is an economic fact: which commitment, and
+    ///      how much of it. Everything the decision actually turns on is resolved here from authoritative
+    ///      state — the Beneficiary from the commitment record, the exercise authority from the commitment
+    ///      record, eligibility from the configured registry, validity and exercisability from the F5
+    ///      kernel, Remaining Entitlement from the persisted facts, and both sides of the backing
+    ///      comparison from the F5 derivations over real PoolManager state.
+    ///
+    ///      Authority is established in one direction only. The configured ExerciseRouter is authenticated
+    ///      first, and only then is it asked who originated the request; asking first and deciding
+    ///      afterwards would let any contract implementing the attribution interface nominate an exerciser.
+    ///      The router's own identity is never an answer to that question and never satisfies exercise
+    ///      authority: it is the coordinator of the request, not a party to the commitment.
+    ///
+    ///      The backing comparison is the one an O2 has to pass, not the one an ordinary transition passes.
+    ///      A successful exercise changes the pool *and* the obligation, so prospective Supporting Capacity
+    ///      is compared against the obligation a complete successful exercise would leave, `O - q`
+    ///      (RR-O2-6). Neither side is reduced here: `O` and Remaining Entitlement are exactly what they
+    ///      were, and stay that way until fulfillment is actually attributable. Exact sufficiency passes.
+    ///
+    ///      The context is written last and only on success, so it is a consequence of authorization rather
+    ///      than an input to it. A rejected attempt reverts, which discards the transient write along with
+    ///      everything else and leaves nothing a later stage could mistake for authorization.
+    /// @param _commitmentId The commitment the authenticated exerciser is asking to exercise.
+    /// @param _q The protected-output quantity the authenticated exerciser is asking to exercise.
+    function authorizeExercise(uint256 _commitmentId, uint256 _q) external {
+        if (!_service.configured) revert StandbyHook__ServiceNotConfigured();
+        if (msg.sender != _service.exerciseRouter) revert StandbyHook__NotExerciseRouter(msg.sender);
+
+        _beginExerciseAuthorization();
+
+        address exerciser = _authenticatedActor(msg.sender);
+
+        if (!_commitmentExists(_commitmentId)) revert StandbyHook__CommitmentDoesNotExist(_commitmentId);
+
+        Commitment storage record = _commitments[_commitmentId];
+
+        PoolId authorizedServiceId = _serviceId();
+
+        if (PoolId.unwrap(record.serviceId) != PoolId.unwrap(authorizedServiceId)) {
+            revert StandbyHook__CommitmentNotInService(_commitmentId, record.serviceId);
+        }
+
+        if (exerciser != record.exerciseAuthority) {
+            revert StandbyHook__NotCommitmentExerciseAuthority(_commitmentId, exerciser);
+        }
+
+        _requireExercisableCommitment(_commitmentId, record.exercisableFrom, record.validUntil);
+
+        address authoritativeBeneficiary = record.beneficiary;
+
+        if (!_service.registry.canReceiveProtectedService(authoritativeBeneficiary)) {
+            revert StandbyHook__BeneficiaryNotEligible(authoritativeBeneficiary);
+        }
+
+        uint128 remainingEntitlement = record.remainingEntitlement;
+
+        if (_q == 0 || _q > remainingEntitlement) revert StandbyHook__InvalidExerciseExtent(_q, remainingEntitlement);
+
+        _requireProspectiveExerciseBacking(_q);
+
+        _writeExerciseAuthorization(
+            ExerciseAuthorizationContext({
+                state: ExerciseAuthorizationState.AUTHORIZED,
+                serviceId: authorizedServiceId,
+                commitmentId: _commitmentId,
+                exerciseRouter: msg.sender,
+                exerciser: exerciser,
+                beneficiary: authoritativeBeneficiary,
+                q: _q
+            })
+        );
+    }
+
+    /// @notice Returns the transaction-scoped O2 causal context this Hook currently holds.
+    /// @dev Observation of Hook-owned state, never a substitute for it. Nothing may treat a value read here
+    ///      as authority: authorization is proven by the context the Hook itself consults, and a caller
+    ///      that has read this has learned what the Hook decided, not acquired the ability to decide.
+    ///
+    ///      Outside an authorized exercise the whole context reads as its zero value with state `EMPTY`,
+    ///      including in every later transaction, because transient storage does not survive the
+    ///      transaction that wrote it.
+    /// @return context The current causal context.
+    function exerciseAuthorization() external view returns (ExerciseAuthorizationContext memory context) {
+        context = _readExerciseAuthorization();
     }
 
     /// @notice Returns the complete authoritative Protected Execution Service basis.
@@ -1078,6 +1323,153 @@ contract StandbyHook is BaseHook {
         }
     }
 
+    /// @dev Claims the single O2 authorization slot for this transaction, before anything external is read.
+    ///
+    ///      The claim precedes the authenticated-actor query, the registry read, and the PoolManager reads
+    ///      the backing derivation performs, which is the whole point of its position. Those reads leave
+    ///      this Hook, and an authorization that had not yet marked itself in flight would let a second one
+    ///      start, complete, and be overwritten by the first when it returned — two authorizations, one
+    ///      surviving context, and no way for a later stage to tell which attempt it belongs to.
+    ///
+    ///      A second top-level attempt made after one has already succeeded fails here too, against
+    ///      `AUTHORIZED`. The two cases are one restriction: while an O2 causal context is unresolved, no
+    ///      other authorization may become active.
+    function _beginExerciseAuthorization() internal {
+        if (_exerciseAuthorizationState() != ExerciseAuthorizationState.EMPTY) {
+            revert StandbyHook__ExerciseAuthorizationAlreadyActive();
+        }
+
+        _writeExerciseAuthorizationState(ExerciseAuthorizationState.AUTHORIZING);
+    }
+
+    /// @dev Requires a commitment to be currently valid and currently within its admitted exercise window.
+    ///
+    ///      Two predicates rather than one, because they are different facts with different consequences
+    ///      and a caller deserves to be told which one it failed. Validity ending is permanent and releases
+    ///      the Capacity Obligation; a window that has not opened is temporary, releases nothing, and
+    ///      leaves the commitment fully binding.
+    ///
+    ///      Both are asked of the F5 kernel rather than restated here, so authorization and every other
+    ///      consumer agree by construction about what the half-open window means at its endpoints.
+    function _requireExercisableCommitment(uint256 _commitmentId, uint64 _exercisableFrom, uint64 _validUntil)
+        internal
+        view
+    {
+        if (!StandbyMath.isValid(_validUntil, block.timestamp)) {
+            revert StandbyHook__CommitmentNotValid(_commitmentId, _validUntil, block.timestamp);
+        }
+
+        if (!StandbyMath.isTemporallyExerciseQualified(_exercisableFrom, _validUntil, block.timestamp)) {
+            revert StandbyHook__CommitmentNotExercisable(_commitmentId, _exercisableFrom, _validUntil, block.timestamp);
+        }
+    }
+
+    /// @dev Requires a complete successful exercise of `q` to leave the service backed.
+    ///
+    ///      Both sides are authoritative derivations of a *post-exercise* world. The capacity side is the
+    ///      F5 prospective derivation applied to the exact protected execution this authorization admits;
+    ///      the obligation side is the current authoritative aggregate less the quantity a complete
+    ///      successful exercise would discharge.
+    ///
+    ///      The subtraction is checked and is meant to be. A commitment that has reached this point is
+    ///      valid with positive Remaining Entitlement, so it is not permanently non-binding, so the bounded
+    ///      index cannot have reclaimed its reference and its full remainder is inside the aggregate:
+    ///      `q <= Remaining <= O` holds structurally. Should any of that ever cease to be true, failing
+    ///      closed on the arithmetic is the correct outcome, and clamping the difference at zero would
+    ///      instead weaken the requirement into one that always passes.
+    ///
+    ///      Exact sufficiency passes: an exercise that leaves capacity exactly equal to the obligation it
+    ///      leaves behind has preserved backing.
+    function _requireProspectiveExerciseBacking(uint256 _q) internal view {
+        uint256 prospectiveCapacity = _prospectiveExerciseCapacity(_q);
+        uint256 prospectiveObligation = _aggregateObligation() - _q;
+
+        if (prospectiveCapacity < prospectiveObligation) {
+            revert StandbyHook__InsufficientProspectiveExerciseBacking(prospectiveCapacity, prospectiveObligation);
+        }
+    }
+
+    /// @dev Derives the Supporting Capacity the canonical protected exercise of exactly `q` would leave.
+    ///
+    ///      The protected execution is not a free choice and is not taken from the request. It is the one
+    ///      the frozen realization defines: the service's own protected direction, exact-output for exactly
+    ///      `q`, bounded by the configured qualification boundary `P_Q` (RR-O2-7, RR-O2-8). Reconstructing
+    ///      it from the immutable service basis is what makes the authorized quantity and the executable
+    ///      quantity the same question.
+    ///
+    ///      No arithmetic happens here. The prospective state comes from the same F5 derivation ordinary
+    ///      transitions use, and the same capacity kernel measures it, so an authorization decision and an
+    ///      enforcement decision can never disagree about what a state is worth.
+    function _prospectiveExerciseCapacity(uint256 _q) internal view returns (uint256 capacity) {
+        SwapParams memory params = SwapParams({
+            zeroForOne: _service.protectedZeroForOne,
+            amountSpecified: _q.toInt256(),
+            sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(_service.tickQ)
+        });
+
+        (uint160 sqrtPriceX96, uint128 liquidity) = _prospectiveSwapState(params);
+
+        capacity = _prospectiveSupportingCapacity(sqrtPriceX96, liquidity);
+    }
+
+    /// @dev Writes the complete authorized causal context, replacing the in-flight marker.
+    function _writeExerciseAuthorization(ExerciseAuthorizationContext memory _context) internal {
+        _writeExerciseAuthorizationState(_context.state);
+
+        _writeAuthorizationWord(AUTHORIZATION_SERVICE_ID_OFFSET, uint256(PoolId.unwrap(_context.serviceId)));
+        _writeAuthorizationWord(AUTHORIZATION_COMMITMENT_ID_OFFSET, _context.commitmentId);
+        _writeAuthorizationWord(AUTHORIZATION_EXERCISE_ROUTER_OFFSET, uint256(uint160(_context.exerciseRouter)));
+        _writeAuthorizationWord(AUTHORIZATION_EXERCISER_OFFSET, uint256(uint160(_context.exerciser)));
+        _writeAuthorizationWord(AUTHORIZATION_BENEFICIARY_OFFSET, uint256(uint160(_context.beneficiary)));
+        _writeAuthorizationWord(AUTHORIZATION_Q_OFFSET, _context.q);
+    }
+
+    /// @dev Reads the complete causal context. Outside an authorized exercise every field is its zero value.
+    function _readExerciseAuthorization() internal view returns (ExerciseAuthorizationContext memory context) {
+        context = ExerciseAuthorizationContext({
+            state: _exerciseAuthorizationState(),
+            serviceId: PoolId.wrap(bytes32(_readAuthorizationWord(AUTHORIZATION_SERVICE_ID_OFFSET))),
+            commitmentId: _readAuthorizationWord(AUTHORIZATION_COMMITMENT_ID_OFFSET),
+            exerciseRouter: address(uint160(_readAuthorizationWord(AUTHORIZATION_EXERCISE_ROUTER_OFFSET))),
+            exerciser: address(uint160(_readAuthorizationWord(AUTHORIZATION_EXERCISER_OFFSET))),
+            beneficiary: address(uint160(_readAuthorizationWord(AUTHORIZATION_BENEFICIARY_OFFSET))),
+            q: _readAuthorizationWord(AUTHORIZATION_Q_OFFSET)
+        });
+    }
+
+    /// @dev Reads the lifecycle position of the causal context.
+    function _exerciseAuthorizationState() internal view returns (ExerciseAuthorizationState state) {
+        state = ExerciseAuthorizationState(_readAuthorizationWord(AUTHORIZATION_STATE_OFFSET));
+    }
+
+    /// @dev Writes the lifecycle position of the causal context.
+    function _writeExerciseAuthorizationState(ExerciseAuthorizationState _state) internal {
+        _writeAuthorizationWord(AUTHORIZATION_STATE_OFFSET, uint256(_state));
+    }
+
+    /// @dev Writes one word of the transient causal context.
+    function _writeAuthorizationWord(uint256 _offset, uint256 _value) internal {
+        bytes32 slot = _authorizationSlot(_offset);
+
+        assembly ("memory-safe") {
+            tstore(slot, _value)
+        }
+    }
+
+    /// @dev Reads one word of the transient causal context.
+    function _readAuthorizationWord(uint256 _offset) internal view returns (uint256 value) {
+        bytes32 slot = _authorizationSlot(_offset);
+
+        assembly ("memory-safe") {
+            value := tload(slot)
+        }
+    }
+
+    /// @dev Resolves the transient slot of one causal-context field.
+    function _authorizationSlot(uint256 _offset) internal pure returns (bytes32 slot) {
+        slot = bytes32(uint256(EXERCISE_AUTHORIZATION_BASE_SLOT) + _offset);
+    }
+
     /// @dev Validates the commitment-specific terms a proposed admission supplies.
     ///
     ///      These are the terms and nothing else: no economics, no eligibility, no capacity, no reference
@@ -1348,10 +1740,15 @@ contract StandbyHook is BaseHook {
     ///
     ///      v4's own price-limit entry conditions are reproduced too, so the derivation never predicts a
     ///      state for a swap the PoolManager would have rejected outright.
+    ///
+    ///      The proposal is taken in memory rather than calldata because two kinds of caller ask this
+    ///      question: enforcement, which forwards a swap someone else proposed, and O2 authorization, which
+    ///      reconstructs the canonical protected execution from the immutable service basis. The derivation
+    ///      is the same either way, and there must not be a second one for the reconstructed case.
     /// @param _params The proposed swap.
     /// @return sqrtPriceX96 The predicted post-swap square-root price.
     /// @return liquidity The predicted post-swap active liquidity.
-    function _prospectiveSwapState(SwapParams calldata _params)
+    function _prospectiveSwapState(SwapParams memory _params)
         internal
         view
         returns (uint160 sqrtPriceX96, uint128 liquidity)
@@ -1371,11 +1768,7 @@ contract StandbyHook is BaseHook {
     ///      protocol fee is set for this direction, and the pinned combination of the two otherwise. A
     ///      zero-amount swap is short-circuited before the price-limit conditions are reproduced, because
     ///      the pool short-circuits it there too.
-    function _beginSwapDerivation(SwapParams calldata _params)
-        internal
-        view
-        returns (SwapDerivation memory derivation)
-    {
+    function _beginSwapDerivation(SwapParams memory _params) internal view returns (SwapDerivation memory derivation) {
         if (!_service.configured) revert StandbyHook__ServiceNotConfigured();
 
         derivation.poolId = _serviceId();

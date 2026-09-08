@@ -13,12 +13,14 @@ import {StandbyHook} from "../../src/StandbyHook.sol";
                              CONTRACTS
 //////////////////////////////////////////////////////////////*/
 
-/// @notice Exposes the internal F4 commitment-storage and bounded-reference mechanics for isolated
-///         unit and fuzz verification.
+/// @notice Exposes internal Standby mechanics that no production path can reach for isolated unit and
+///         fuzz verification.
 /// @dev The mechanics under test are internal by design: F4 owns the storage primitives that commitment
 ///      admission and fulfillment will later drive, and it deliberately introduces no production path
-///      that reaches them. Without this exposure the primitives could not be verified at all before the
-///      slices that consume them exist, which would invert the verification-gated dependency rule.
+///      that reaches them. F8A adds one more of the same kind — the claim of the single O2 authorization
+///      slot, which no production caller can hold open on its own. Without this exposure the primitives
+///      could not be verified at all before the slices that consume them exist, which would invert the
+///      verification-gated dependency rule.
 ///
 ///      Every function here is a bare pass-through. The harness declares no state of its own, adds no
 ///      check, removes no check, and re-implements nothing: the allocation, the record write, the
@@ -77,5 +79,19 @@ contract StandbyHookHarness is StandbyHook {
     /// @return exists Whether the identity has been allocated.
     function commitmentExists(uint256 _commitmentId) external view returns (bool exists) {
         exists = _commitmentExists(_commitmentId);
+    }
+
+    /// @notice Runs the production claim of the single O2 authorization slot.
+    /// @dev Exposed because production authorization claims the slot and reaches a terminal outcome inside
+    ///      one call: every external read it performs before writing its result is a static call, so no
+    ///      production caller can be executing while the slot is held in flight. That is the property worth
+    ///      having, and it is exactly what makes the in-flight guard unobservable from production and
+    ///      unverifiable without this pass-through.
+    ///
+    ///      It adds no check and removes none. What it supplies is the ability to hold the claim open
+    ///      across a subsequent call, which is authority and nothing else: a slot claimed here is not an
+    ///      authorization, nothing was authenticated, and no predicate was evaluated.
+    function beginExerciseAuthorization() external {
+        _beginExerciseAuthorization();
     }
 }
