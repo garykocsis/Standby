@@ -5,6 +5,8 @@ pragma solidity 0.8.26;
                               IMPORTS
 //////////////////////////////////////////////////////////////*/
 
+import {IHooks} from "v4-core/interfaces/IHooks.sol";
+
 import {StandbyHook} from "../../src/StandbyHook.sol";
 
 import {BaseUnbackedExerciseAuthorizationTest} from "../shared/BaseUnbackedExerciseAuthorizationTest.t.sol";
@@ -55,6 +57,15 @@ contract ExerciseBackingFuzzTest is BaseUnbackedExerciseAuthorizationTest {
     ///      an open window, an eligible Beneficiary, and `0 < q <= Remaining` — so the only decision left is
     ///      the backing comparison. A refused run must name the exact independently predicted pair, and must
     ///      leave the obligation, the remainder, and the causal context untouched.
+    ///
+    ///      An authorized run whose quantity exceeds what the pool can deliver before `P_Q` is refused on
+    ///      the other side of the operation, by the execution evidence rather than by the backing
+    ///      comparison, and that distinction is asserted rather than smoothed over. Such a run exists only
+    ///      because the harness wrote an obligation the pool never backed: inside a reachable state
+    ///      `S >= O >= q` holds, so the exact-output execution always produces exactly `q`. Here it produces
+    ///      everything the domain has and no more, which is a partial individual exercise, and RR-O2-9
+    ///      makes that a failure of the complete O2 rather than a smaller exercise. That the run reaches the
+    ///      execution rejection at all is itself evidence that its authorization was admitted.
     function testFuzz_authorization_isAdmittedExactlyWhenTheCompleteExerciseStaysBacked(
         uint256 _remainingSeed,
         uint256 _qSeed,
@@ -79,11 +90,23 @@ contract ExerciseBackingFuzzTest is BaseUnbackedExerciseAuthorizationTest {
         uint256 prospectiveObligation = obligation - q;
 
         if (expectedProspective >= prospectiveObligation) {
-            _authorizeAs(commitmentExerciseAuthority, commitmentId, q);
+            if (q > capacity) {
+                _expectHookRejection(
+                    IHooks.afterSwap.selector,
+                    abi.encodeWithSelector(
+                        StandbyHook.StandbyHook__ProtectedOutputNotExecuted.selector, int256(capacity), q
+                    )
+                );
+                _authorizeAs(commitmentExerciseAuthority, commitmentId, q);
 
-            _assertAuthorizationContext(
-                commitmentId, commitmentExerciseAuthority, beneficiary, q, "a backed exercise must be authorized"
-            );
+                _assertNoAuthorizationContext("an undeliverable exercise must leave no causal context");
+            } else {
+                _authorizeAs(commitmentExerciseAuthority, commitmentId, q);
+
+                _assertExercisedContext(
+                    commitmentId, commitmentExerciseAuthority, beneficiary, q, "a backed exercise must be authorized"
+                );
+            }
         } else {
             vm.expectRevert(
                 abi.encodeWithSelector(

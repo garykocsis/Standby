@@ -47,7 +47,7 @@ contract ExerciseAuthorizationFuzzTest is BaseExerciseAuthorizationTest {
         if (q > 0 && q <= entitlement) {
             _authorizeAs(commitmentExerciseAuthority, commitmentId, q);
 
-            _assertAuthorizationContext(
+            _assertExercisedContext(
                 commitmentId, commitmentExerciseAuthority, beneficiary, q, "a permissible extent must be authorized"
             );
 
@@ -91,7 +91,7 @@ contract ExerciseAuthorizationFuzzTest is BaseExerciseAuthorizationTest {
         if (exerciser == commitmentExerciseAuthority) {
             _authorizeAs(exerciser, commitmentId, entitlement);
 
-            _assertAuthorizationContext(
+            _assertExercisedContext(
                 commitmentId, exerciser, beneficiary, entitlement, "the exercise authority must be authorized"
             );
         } else {
@@ -110,13 +110,14 @@ contract ExerciseAuthorizationFuzzTest is BaseExerciseAuthorizationTest {
                       REQUEST-SURFACE INERTNESS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice The exerciser's `maxInput` changes no F8A outcome anywhere in the `uint256` domain.
-    /// @dev The field is on the frozen F8A request surface and has no F8A semantics: it is exercise-local
+    /// @notice The exerciser's `maxInput` changes no outcome anywhere in the `uint256` domain.
+    /// @dev The field is on the frozen request surface and still has no semantics here: it is exercise-local
     ///      cost protection, enforced against the authoritative PoolManager input debt an executed
-    ///      exact-output swap produces, and no swap executes at this slice. This property is what "no
-    ///      semantics" means operationally — across every value the domain admits, a refusal is the same
-    ///      refusal, an authorization is the same authorization, the causal bindings are identical, and the
-    ///      derived economics are untouched.
+    ///      exact-output swap produces. The swap now executes and that debt exists, but requiring
+    ///      `actualInput <= maxInput` belongs to F8C together with settling it, so nothing consumes the
+    ///      bound yet. This property is what "no semantics" means operationally — across every value the
+    ///      domain admits, a refusal is the same refusal, an authorized exercise is the same exercise, the
+    ///      causal bindings are identical, and the derived economics are untouched.
     ///
     ///      Both directions are covered in one run. The refusal comes first, because a refusal leaves the
     ///      single authorization slot free, so the same run can then show that the same bound authorizes a
@@ -138,7 +139,7 @@ contract ExerciseAuthorizationFuzzTest is BaseExerciseAuthorizationTest {
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, q, _maxInput);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId, commitmentExerciseAuthority, beneficiary, q, "no maxInput may alter the causal bindings"
         );
 

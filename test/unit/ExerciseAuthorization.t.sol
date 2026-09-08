@@ -101,7 +101,7 @@ contract ExerciseAuthorizationUnitTest is BaseUnbackedExerciseAuthorizationTest 
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId, commitmentExerciseAuthority, beneficiary, EXERCISE_Q, "S' == O - q must be authorized"
         );
     }
@@ -220,7 +220,7 @@ contract ExerciseAuthorizationUnitTest is BaseUnbackedExerciseAuthorizationTest 
 
         _authorizeAs(commitmentExerciseAuthority, commitmentId, EXERCISE_Q);
 
-        _assertAuthorizationContext(
+        _assertExercisedContext(
             commitmentId, commitmentExerciseAuthority, beneficiary, EXERCISE_Q, "the slot must still be usable"
         );
     }

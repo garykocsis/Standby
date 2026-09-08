@@ -10,6 +10,7 @@ import {PoolId} from "v4-core/types/PoolId.sol";
 import {ExerciseRouter} from "../../src/ExerciseRouter.sol";
 import {StandbyHook} from "../../src/StandbyHook.sol";
 
+import {ExerciseDeltaClosureRouter} from "../harness/ExerciseDeltaClosureRouter.sol";
 import {BaseAuthenticBackingTest} from "./BaseAuthenticBackingTest.t.sol";
 
 /*//////////////////////////////////////////////////////////////
@@ -31,6 +32,15 @@ import {BaseAuthenticBackingTest} from "./BaseAuthenticBackingTest.t.sol";
 ///      proven about it is a property of the Hook's configuration rather than of a difference in
 ///      implementation.
 ///
+///      From F8B the configured router is `ExerciseDeltaClosureRouter` — the production `ExerciseRouter`
+///      with mechanical PoolManager delta closure added and nothing else. It is needed because a completed
+///      exercise now performs a real swap, and F8B implements no settlement, so no production path can
+///      close the deltas that swap opens and no exercise could otherwise commit. Every authorization
+///      predicate below is still decided by the production `authorizeExercise` against production state,
+///      and every rejection below still occurs inside it, before any unlock. The closure contributes no
+///      economics: it assigns no payer, enforces no cost bound, delivers nothing to the Beneficiary, and
+///      attributes no fulfillment.
+///
 ///      Roles stay separate throughout. The commitment's exercise authority is not the Beneficiary, not the
 ///      establishment authority, not the configuration authority, not a trader, not a liquidity provider,
 ///      not the registry administrator, and not either router — so an authorization that succeeds cannot be
@@ -51,9 +61,10 @@ abstract contract BaseExerciseAuthorizationTest is BaseAuthenticBackingTest {
 
     /// @dev The `maxInput` a request carries when the test is not about `maxInput`.
     ///
-    ///      Any value would do, which is the point: F8A neither reads nor forwards this field, so no test
-    ///      outcome may depend on which value it is. The suites that are about the field say so explicitly
-    ///      and vary it across the `uint256` domain.
+    ///      Any value would do, which is the point: nothing implemented so far reads or forwards this
+    ///      field, so no test outcome may depend on which value it is. Enforcing it against the input debt
+    ///      the executed swap produces belongs to F8C. The suites that are about the field say so
+    ///      explicitly and vary it across the `uint256` domain.
     uint256 internal constant UNCONSTRAINED_MAX_INPUT = type(uint256).max;
 
     /*//////////////////////////////////////////////////////////////
@@ -67,6 +78,8 @@ abstract contract BaseExerciseAuthorizationTest is BaseAuthenticBackingTest {
         unauthorizedExerciser = makeAddr("unauthorizedExerciser");
 
         unconfiguredExerciseRouter = new ExerciseRouter(hook);
+
+        _fundDeltaClosure();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -75,12 +88,36 @@ abstract contract BaseExerciseAuthorizationTest is BaseAuthenticBackingTest {
 
     /// @dev Activates the service with a real ExerciseRouter bound to this fixture's Hook.
     function _resolveExerciseRouter() internal virtual override returns (address router) {
-        configuredExerciseRouter = new ExerciseRouter(hook);
+        configuredExerciseRouter = new ExerciseDeltaClosureRouter(hook);
 
         router = address(configuredExerciseRouter);
     }
 
-    /// @dev Requests O2 authorization as an originating exerciser, through the configured ExerciseRouter.
+    /// @dev Gives the delta-closure router the currency it needs to close a committed execution's deltas.
+    ///
+    ///      Not funding, in any economic sense: it is the balance the mechanical closure draws on so that
+    ///      the real PoolManager will let an otherwise valid execution commit. No exerciser is funded, no
+    ///      approval is granted, and nothing here decides who pays for an exercise — that is F8C's.
+    function _fundDeltaClosure() internal {
+        ustb.mint(exerciseRouter, ACTOR_FUNDING);
+        usdc.mint(exerciseRouter, ACTOR_FUNDING);
+    }
+
+    /// @dev The ExerciseRouter a causal context is expected to be bound to.
+    ///
+    ///      Overridable because a fixture may activate its service with a different coordinator — an
+    ///      adversarial one, for the classification restrictions that must hold whatever the configured
+    ///      router does.
+    function _expectedContextRouter() internal view virtual returns (address router) {
+        router = exerciseRouter;
+    }
+
+    /// @dev Makes an O2 exercise request as an originating exerciser, through the configured ExerciseRouter.
+    ///
+    ///      The request is the whole production coordination the router implements: it obtains Hook-owned
+    ///      authorization and then performs the one protected execution that authorization admits. A
+    ///      request that is refused at authorization therefore never reaches an execution, and one that
+    ///      passes leaves execution evidence rather than a standing authorization.
     function _authorizeAs(address _exerciser, uint256 _commitmentId, uint256 _q) internal {
         _authorizeAs(_exerciser, _commitmentId, _q, UNCONSTRAINED_MAX_INPUT);
     }
@@ -127,8 +164,12 @@ abstract contract BaseExerciseAuthorizationTest is BaseAuthenticBackingTest {
         assertEq(current.q, 0, _context);
     }
 
-    /// @dev Proves the Hook holds exactly the expected authorized causal bindings.
-    function _assertAuthorizationContext(
+    /// @dev Proves the Hook holds exactly the expected causal bindings, at an expected causal position.
+    ///
+    ///      The bindings are the same object throughout the O2 operation: authorization writes them and no
+    ///      later stage may substitute one. Only the position advances, so the position is the parameter.
+    function _assertCausalContext(
+        StandbyHook.ExerciseAuthorizationState _state,
         uint256 _commitmentId,
         address _exerciser,
         address _beneficiary,
@@ -137,13 +178,45 @@ abstract contract BaseExerciseAuthorizationTest is BaseAuthenticBackingTest {
     ) internal view {
         StandbyHook.ExerciseAuthorizationContext memory current = _authorizationContext();
 
-        assertEq(uint256(current.state), uint256(StandbyHook.ExerciseAuthorizationState.AUTHORIZED), _context);
+        assertEq(uint256(current.state), uint256(_state), _context);
         assertEq(PoolId.unwrap(current.serviceId), PoolId.unwrap(servicePoolId), _context);
         assertEq(current.commitmentId, _commitmentId, _context);
-        assertEq(current.exerciseRouter, address(configuredExerciseRouter), _context);
+        assertEq(current.exerciseRouter, _expectedContextRouter(), _context);
         assertEq(current.exerciser, _exerciser, _context);
         assertEq(current.beneficiary, _beneficiary, _context);
         assertEq(current.q, _q, _context);
+    }
+
+    /// @dev Proves the Hook holds exactly the expected bindings, still awaiting its protected execution.
+    function _assertAuthorizationContext(
+        uint256 _commitmentId,
+        address _exerciser,
+        address _beneficiary,
+        uint256 _q,
+        string memory _context
+    ) internal view {
+        _assertCausalContext(
+            StandbyHook.ExerciseAuthorizationState.AUTHORIZED, _commitmentId, _exerciser, _beneficiary, _q, _context
+        );
+    }
+
+    /// @dev Proves a completed exercise request left exactly the expected bindings, with execution proven.
+    ///
+    ///      This is what a request that passes every authorization predicate now reaches, because the
+    ///      request coordinates the protected execution as well as the authorization. The bindings asserted
+    ///      are the ones authorization resolved — the commitment, the authenticated exerciser, the
+    ///      Beneficiary taken from the commitment record, and the quantity — so an authorization predicate
+    ///      that resolved the wrong fact still fails here.
+    function _assertExercisedContext(
+        uint256 _commitmentId,
+        address _exerciser,
+        address _beneficiary,
+        uint256 _q,
+        string memory _context
+    ) internal view {
+        _assertCausalContext(
+            StandbyHook.ExerciseAuthorizationState.EXECUTED, _commitmentId, _exerciser, _beneficiary, _q, _context
+        );
     }
 
     /// @dev The Supporting Capacity the canonical protected exercise of `q` would leave, from frozen
