@@ -10,8 +10,9 @@ import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 
-import {ExerciseRouter} from "../../src/ExerciseRouter.sol";
 import {StandbyHook} from "../../src/StandbyHook.sol";
+
+import {UnfinalizedExerciseRouter} from "./UnfinalizedExerciseRouter.sol";
 
 /*//////////////////////////////////////////////////////////////
                              CONTRACTS
@@ -19,32 +20,32 @@ import {StandbyHook} from "../../src/StandbyHook.sol";
 
 /// @notice Closes the PoolManager currency deltas a real protected execution opens, mechanically.
 /// @dev A real Uniswap v4 swap opens currency deltas, and `PoolManager.unlock` refuses to return while any
-///      remain open. Closing them is input settlement and Beneficiary delivery, which belong to F8C, so no
-///      production path at F8B can close them and no production O2 transaction can commit. Verifying that
-///      an otherwise valid real-PoolManager execution actually produced exactly `q`, and that the pool it
-///      left behind is the pool the F5 derivation predicted, requires the execution to commit — which is
-///      what this contract exists for, and the only thing it exists for.
+///      remain open. Production now closes them — settlement and direct Beneficiary delivery are
+///      implemented — and that is exactly why this contract still exists: the F8B evidence is about what
+///      Hook-owned execution evidence means *on its own*, and observing that requires a committed real
+///      execution with no settlement and no delivery behind it. Production can no longer produce one.
 ///
-///      It is the production `ExerciseRouter` with one override. `exercise`, the originator attribution, the
-///      authorization request, the unlock, the PoolManager authentication, and the protected execution
-///      itself are all inherited production code running unmodified; the override adds nothing before the
-///      execution and only closes whatever deltas that execution left afterwards.
+///      It is the unfinalized production router with one further override. `exercise`, the originator
+///      attribution, the authorization request, the unlock, the PoolManager authentication, and the
+///      protected execution itself are all inherited production code running unmodified; the override adds
+///      nothing before the execution and only closes whatever deltas that execution left afterwards,
+///      instead of the production settlement and delivery it replaces.
 ///
 ///      The closure is deliberately economics-free, and every choice in it is made so that nothing here can
 ///      be read as protocol behavior:
 ///
 ///      - it funds the input debt from this contract's own pre-funded balance, so it assigns no payer and
-///        establishes nothing about who is supposed to pay (RR-O2-11 is F8C's);
-///      - it compares nothing against `maxInput`, so it enforces no cost bound (RR-O2-12 is F8C's);
+///        establishes nothing about who is supposed to pay (RR-O2-11 is the production path's);
+///      - it compares nothing against `maxInput`, so it enforces no cost bound (RR-O2-12 likewise);
 ///      - it takes the protected output to itself and not to the Beneficiary, so no test can mistake a
-///        closed delta for delivery (RR-O2-16, RR-O2-17 are F8C's);
+///        closed delta for delivery (RR-O2-16, RR-O2-17 likewise);
 ///      - it reduces no Remaining Entitlement, attributes no fulfillment, and finalizes nothing.
 ///
 ///      Harness-only behavior is not evidence about production settlement, delivery, payment
 ///      responsibility, or fulfillment, and nothing here may be presented as such. What it is evidence for
 ///      is narrow and real: the Hook's O2 classification and execution evidence, observed across a
 ///      committed swap performed by the real pinned PoolManager.
-contract ExerciseDeltaClosureRouter is ExerciseRouter {
+contract ExerciseDeltaClosureRouter is UnfinalizedExerciseRouter {
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -60,20 +61,18 @@ contract ExerciseDeltaClosureRouter is ExerciseRouter {
 
     /// @notice Deploys the closure router against the same Hook the production router binds.
     /// @param _hook The StandbyHook that owns the Protected Execution Service.
-    constructor(StandbyHook _hook) ExerciseRouter(_hook) {}
+    constructor(StandbyHook _hook) UnfinalizedExerciseRouter(_hook) {}
 
     /*//////////////////////////////////////////////////////////////
                          EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Runs the production protected execution and then closes its deltas mechanically.
-    /// @dev The pool is read before the execution because the Hook describes the admitted execution only
-    ///      while the causal context is still AUTHORIZED — afterwards it is evidence, not a proposal.
+    /// @dev The pool the execution was performed against comes back from the production execution helper
+    ///      itself, so this contract composes no description of the protected operation of its own.
     /// @return result The encoded balance delta of the performed execution.
     function unlockCallback(bytes calldata) external override returns (bytes memory result) {
-        PoolKey memory key = i_hook.protectedExecutionService().poolKey;
-
-        BalanceDelta delta = _executeAuthorizedExercise();
+        (PoolKey memory key,, BalanceDelta delta) = _executeAuthorizedExercise();
 
         _closeDelta(key.currency0, delta.amount0());
         _closeDelta(key.currency1, delta.amount1());

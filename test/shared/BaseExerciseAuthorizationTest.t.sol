@@ -33,13 +33,15 @@ import {BaseAuthenticBackingTest} from "./BaseAuthenticBackingTest.t.sol";
 ///      implementation.
 ///
 ///      From F8B the configured router is `ExerciseDeltaClosureRouter` — the production `ExerciseRouter`
-///      with mechanical PoolManager delta closure added and nothing else. It is needed because a completed
-///      exercise now performs a real swap, and F8B implements no settlement, so no production path can
-///      close the deltas that swap opens and no exercise could otherwise commit. Every authorization
-///      predicate below is still decided by the production `authorizeExercise` against production state,
-///      and every rejection below still occurs inside it, before any unlock. The closure contributes no
-///      economics: it assigns no payer, enforces no cost bound, delivers nothing to the Beneficiary, and
-///      attributes no fulfillment.
+///      with mechanical PoolManager delta closure in place of settlement, and nothing else. It is what
+///      keeps the F8A and F8B evidence about what it is about: a completed exercise performs a real swap,
+///      and these suites are about the authorization that admitted it and the Hook-owned evidence that it
+///      happened, neither of which may quietly come to depend on the settlement and delivery that follow.
+///      Every authorization predicate below is still decided by the production `authorizeExercise` against
+///      production state, and every rejection below still occurs inside it, before any unlock. The closure
+///      contributes no economics: it assigns no payer, enforces no cost bound, delivers nothing to the
+///      Beneficiary, and attributes no fulfillment. The settlement and delivery those are the absence of
+///      are exercised on the real production path by `BaseExerciseSettlementTest`.
 ///
 ///      Roles stay separate throughout. The commitment's exercise authority is not the Beneficiary, not the
 ///      establishment authority, not the configuration authority, not a trader, not a liquidity provider,
@@ -61,10 +63,10 @@ abstract contract BaseExerciseAuthorizationTest is BaseAuthenticBackingTest {
 
     /// @dev The `maxInput` a request carries when the test is not about `maxInput`.
     ///
-    ///      Any value would do, which is the point: nothing implemented so far reads or forwards this
-    ///      field, so no test outcome may depend on which value it is. Enforcing it against the input debt
-    ///      the executed swap produces belongs to F8C. The suites that are about the field say so
-    ///      explicitly and vary it across the `uint256` domain.
+    ///      The point is that it constrains nothing. It is the largest bound expressible, so no input debt
+    ///      the pool could ever produce can breach it and no outcome below can turn on the field. The
+    ///      suites that are about the field say so explicitly and choose their bounds against the
+    ///      authoritative debt the executed swap actually produced.
     uint256 internal constant UNCONSTRAINED_MAX_INPUT = type(uint256).max;
 
     /*//////////////////////////////////////////////////////////////
