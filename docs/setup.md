@@ -843,6 +843,58 @@ forge script script/DeployStandbyHook.s.sol
 ```
 
 The reusable procedure `deployStandbyHook(...)` takes the same values as explicit arguments, so tests and
-later composed deployment scripts supply them directly and never read the environment.
+composed deployment scripts supply them directly and never read the environment. It lives on the abstract
+`StandbyHookDeployment` in the same file; `DeployStandbyHook` is the operational entrypoint that wraps it,
+and a composed deployment script inherits the procedure rather than deploying a copy of it — a contract
+carrying the Hook's creation code is far above the deployed-contract size limit, so on a real chain only a
+script contract can run it.
+
+## Composed environment deployment
+
+`script/DeployDemoEnvironment.s.sol` composes a complete Standby environment — deterministic ordered
+fixture currencies, the EligibilityRegistry, both trusted perimeters, the Hook, and the ExerciseRouter —
+around the resolved infrastructure. Its `run()` requires:
+
+| Variable                          | Meaning                                                           |
+| --------------------------------- | ----------------------------------------------------------------- |
+| `STANDBY_CONFIGURATION_AUTHORITY` | The only account authorized to configure and activate the service |
+| `STANDBY_REGISTRY_ADMIN`          | The EligibilityRegistry administrator                             |
+
+The two trusted perimeters are deployed by the composition itself, so they are not supplied here.
+
+## Bootstrap
+
+`script/BootstrapStandby.s.sol` takes an already-deployed environment to the canonical pre-A1 state:
+pool initialization, service activation, eligibility seeding, funding and approvals, and the canonical
+controlled liquidity. Its `run()` reads the deployed manifest and the accounts holding each role:
+
+| Variable                           | Meaning                                            |
+| ---------------------------------- | -------------------------------------------------- |
+| `STANDBY_POOL_MANAGER`             | The deployed Uniswap v4 PoolManager                |
+| `STANDBY_USTB`                     | The deployed MockUSTB (`currency0`)                |
+| `STANDBY_USDC`                     | The deployed MockUSDC (`currency1`)                |
+| `STANDBY_REGISTRY`                 | The deployed EligibilityRegistry                   |
+| `STANDBY_SWAP_PERIMETER`           | The deployed trusted ordinary-swap perimeter       |
+| `STANDBY_LIQUIDITY_PERIMETER`      | The deployed trusted liquidity perimeter           |
+| `STANDBY_HOOK`                     | The deployed StandbyHook                           |
+| `STANDBY_EXERCISE_ROUTER`          | The deployed ExerciseRouter                        |
+| `STANDBY_CONFIGURATION_AUTHORITY`  | Activates the Protected Execution Service          |
+| `STANDBY_ESTABLISHMENT_AUTHORITY`  | The service's commitment-establishment authority   |
+| `STANDBY_REGISTRY_ADMIN`           | Seeds the mutable eligibility predicates           |
+| `STANDBY_LIQUIDITY_PROVIDER`       | Provides the canonical controlled liquidity        |
+| `STANDBY_TRADER`                   | The ordinary eligible trader                       |
+| `STANDBY_BENEFICIARY`              | The account protected execution is delivered to    |
+| `STANDBY_EXERCISE_AUTHORITY`       | The account a commitment authorizes to exercise it |
+
+Bootstrap broadcasts each step from the account authorized to perform it, so a local broadcast run needs a
+node that will send from those accounts:
+
+```bash
+forge script script/BootstrapStandby.s.sol \
+  --rpc-url http://127.0.0.1:8545 --broadcast --unlocked --sender <funded account>
+```
+
+Under `forge test` the same functions are called directly and the broadcast cheatcode sets the sender, so
+acceptance evidence and operational use run one implementation rather than two.
 
 `.env` is git-ignored. Never commit deployment keys or addresses that carry authority.
