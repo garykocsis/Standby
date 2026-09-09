@@ -23,14 +23,20 @@ import {NetworkConfig} from "./helpers/NetworkConfig.sol";
                              CONTRACTS
 //////////////////////////////////////////////////////////////*/
 
-/// @title DeployStandbyHook
+/// @title StandbyHookDeployment
 /// @notice The single canonical StandbyHook deployment procedure.
 /// @dev Reused by tests, deterministic local Anvil deployment, and later public/production
 ///      deployment. The procedure is fixture-agnostic: it binds the Hook's realization-wide trust
 ///      dependencies and knows nothing about Standby currencies, pool keys, service boundaries,
 ///      protected direction, or demo actors. Service configuration is a separate authorized
 ///      transaction against the deployed Hook, not part of deployment.
-contract DeployStandbyHook is Script {
+///
+///      It is an inherited procedure rather than a deployable helper for a structural reason. A contract
+///      that creates the Hook must carry the Hook's creation code in its own bytecode, which puts it far
+///      above the deployed-contract size limit — so on any real chain the only account that can run this
+///      procedure is a script contract, which is never itself deployed. Composed deployment scripts
+///      therefore inherit this procedure and run it in their own context; none of them may restate it.
+abstract contract StandbyHookDeployment is Script {
     /*//////////////////////////////////////////////////////////////
                            STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
@@ -79,49 +85,6 @@ contract DeployStandbyHook is Script {
     /// @param expected The intended trusted PositionManager.
     /// @param actual The trusted PositionManager the deployed Hook is bound to.
     error DeployStandbyHook__TrustedPositionManagerMismatch(address expected, address actual);
-
-    /*//////////////////////////////////////////////////////////////
-                         EXTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Canonical script entrypoint: resolves infrastructure and deploys StandbyHook.
-    /// @dev Under a broadcasting Foundry script, salted creations are routed through the
-    ///      deterministic CREATE2 factory, so that factory is the address the Hook address is
-    ///      mined against.
-    ///
-    ///      The Hook-wide trust dependencies are deployment inputs rather than resolved
-    ///      infrastructure, so they are supplied through the environment. They are required rather
-    ///      than defaulted: a Hook deployed against a guessed trust basis would be either wrong or
-    ///      permanently unconfigurable, and neither belongs in a canonical deployment path.
-    /// @return hook The deployed StandbyHook.
-    /// @return salt The CREATE2 salt that produced the Hook address.
-    /// @return config The resolved infrastructure configuration the Hook was deployed against.
-    function run() external returns (StandbyHook hook, bytes32 salt, NetworkConfig memory config) {
-        HelperConfig helperConfig = new HelperConfig();
-        config = helperConfig.getNetworkConfig();
-
-        address configurationAuthority = vm.envAddress("STANDBY_CONFIGURATION_AUTHORITY");
-        address trustedUniversalRouter = vm.envAddress("STANDBY_TRUSTED_UNIVERSAL_ROUTER");
-        address trustedPositionManager = vm.envAddress("STANDBY_TRUSTED_POSITION_MANAGER");
-
-        vm.startBroadcast();
-        (hook, salt) = deployStandbyHook(
-            IPoolManager(config.poolManager),
-            CREATE2_FACTORY,
-            configurationAuthority,
-            trustedUniversalRouter,
-            trustedPositionManager
-        );
-        vm.stopBroadcast();
-
-        console2.log("Standby chain id:      ", config.chainId);
-        console2.log("Standby PoolManager:   ", config.poolManager);
-        console2.log("Standby Hook:          ", address(hook));
-        console2.log("Configuration authority:", configurationAuthority);
-        console2.log("Trusted UniversalRouter:", trustedUniversalRouter);
-        console2.log("Trusted PositionManager:", trustedPositionManager);
-        console2.logBytes32(salt);
-    }
 
     /*//////////////////////////////////////////////////////////////
                           PUBLIC FUNCTIONS
@@ -219,5 +182,56 @@ contract DeployStandbyHook is Script {
         if (boundPositionManager != _trustedPositionManager) {
             revert DeployStandbyHook__TrustedPositionManagerMismatch(_trustedPositionManager, boundPositionManager);
         }
+    }
+}
+
+/// @title DeployStandbyHook
+/// @notice The operational entrypoint of the canonical StandbyHook deployment procedure.
+/// @dev A thin wrapper and nothing else: it resolves infrastructure, supplies the deployment's trust
+///      inputs from the environment, and broadcasts the inherited procedure. It states no deployment
+///      semantics of its own, so the Hook a test deploys and the Hook an operator deploys are produced by
+///      exactly the same code.
+contract DeployStandbyHook is StandbyHookDeployment {
+    /*//////////////////////////////////////////////////////////////
+                         EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Canonical script entrypoint: resolves infrastructure and deploys StandbyHook.
+    /// @dev Under a broadcasting Foundry script, salted creations are routed through the
+    ///      deterministic CREATE2 factory, so that factory is the address the Hook address is
+    ///      mined against.
+    ///
+    ///      The Hook-wide trust dependencies are deployment inputs rather than resolved
+    ///      infrastructure, so they are supplied through the environment. They are required rather
+    ///      than defaulted: a Hook deployed against a guessed trust basis would be either wrong or
+    ///      permanently unconfigurable, and neither belongs in a canonical deployment path.
+    /// @return hook The deployed StandbyHook.
+    /// @return salt The CREATE2 salt that produced the Hook address.
+    /// @return config The resolved infrastructure configuration the Hook was deployed against.
+    function run() external returns (StandbyHook hook, bytes32 salt, NetworkConfig memory config) {
+        HelperConfig helperConfig = new HelperConfig();
+        config = helperConfig.getNetworkConfig();
+
+        address configurationAuthority = vm.envAddress("STANDBY_CONFIGURATION_AUTHORITY");
+        address trustedUniversalRouter = vm.envAddress("STANDBY_TRUSTED_UNIVERSAL_ROUTER");
+        address trustedPositionManager = vm.envAddress("STANDBY_TRUSTED_POSITION_MANAGER");
+
+        vm.startBroadcast();
+        (hook, salt) = deployStandbyHook(
+            IPoolManager(config.poolManager),
+            CREATE2_FACTORY,
+            configurationAuthority,
+            trustedUniversalRouter,
+            trustedPositionManager
+        );
+        vm.stopBroadcast();
+
+        console2.log("Standby chain id:      ", config.chainId);
+        console2.log("Standby PoolManager:   ", config.poolManager);
+        console2.log("Standby Hook:          ", address(hook));
+        console2.log("Configuration authority:", configurationAuthority);
+        console2.log("Trusted UniversalRouter:", trustedUniversalRouter);
+        console2.log("Trusted PositionManager:", trustedPositionManager);
+        console2.logBytes32(salt);
     }
 }

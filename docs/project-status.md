@@ -1,10 +1,10 @@
 # Standby — Project Status
 
-**Last Updated:** September 8, 2026
+**Last Updated:** September 9, 2026
 **Project Phase:** Solidity / Reference Implementation
-**Current Implementation Slice:** F9 — Canonical Acceptance (NEXT AUTHORIZED / NOT STARTED)
-**Last Closed Gate:** G-I — Full Stateful Invariant Gate (CLOSED / PASS)
-**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 COMPLETE — F6A COMPLETE — F7 COMPLETE — F6B COMPLETE — F8A COMPLETE — F8B COMPLETE — F8C COMPLETE — F8D COMPLETE — GI COMPLETE — F9 NOT STARTED
+**Current Implementation Slice:** F10 — Demo / Submission Readiness (NEXT AUTHORIZED / NOT STARTED)
+**Last Closed Gate:** G9 — Canonical Acceptance Gate (CLOSED / PASS)
+**Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 COMPLETE — F6A COMPLETE — F7 COMPLETE — F6B COMPLETE — F8A COMPLETE — F8B COMPLETE — F8C COMPLETE — F8D COMPLETE — GI COMPLETE — F9 COMPLETE — F10 NOT STARTED
 
 ---
 
@@ -41,15 +41,15 @@ Implementation proceeds through the verification-gated F0–F10 ladder defined i
 
 The next authorized slice is:
 
-> **F9 — Canonical Acceptance**
+> **F10 — Demo / Submission Readiness**
 
 The last closed gate is:
 
-> **G-I — Full Stateful Invariant Gate**
+> **G9 — Canonical Acceptance Gate**
 
-F0, F1, F2, F3, F4, F5, F6A, F7, F6B, F8A, F8B, F8C, F8D and GI have been implemented, verified, and explicitly gate-closed. The targeted G3 revalidation required by the F5 prospective-derivability correction also passed, and G3 remains closed.
+F0, F1, F2, F3, F4, F5, F6A, F7, F6B, F8A, F8B, F8C, F8D, GI and F9 have been implemented, verified, and explicitly gate-closed. The targeted G3 revalidation required by the F5 prospective-derivability correction also passed, and G3 remains closed.
 
-GI was reviewed independently and G-I was explicitly closed. F9 is the next authorized implementation slice and has not been started.
+F9 was reviewed independently and G9 was explicitly closed. F10 is the next authorized implementation slice and has not been started.
 
 ---
 
@@ -73,8 +73,8 @@ Current implementation sequence:
 | F8C   | O2 Input Settlement + Direct Beneficiary Delivery | **COMPLETE — G8C CLOSED**    |
 | F8D   | O2 Causal Finalization                            | **COMPLETE — G8D CLOSED**    |
 | GI    | Full Stateful Invariant Verification              | **COMPLETE — G-I CLOSED**    |
-| F9    | Canonical Acceptance                              | **NEXT / NOT STARTED**       |
-| F10   | Demo Instrumentation                              | NOT STARTED                  |
+| F9    | Canonical Acceptance                              | **COMPLETE — G9 CLOSED**     |
+| F10   | Demo Instrumentation                              | **NEXT / NOT STARTED**       |
 | F9T   | Public Testnet Evidence                           | OPTIONAL / OFF CRITICAL PATH |
 
 Downstream slices must not be started merely because upstream code compiles.
@@ -371,14 +371,14 @@ G2 verified predicate independence, administrator authority, read fidelity, cros
 
 ## 10. Current Blocker
 
-There is no unresolved F0, F1, F2, F3, F4, F5, F6A, F7, F6B, F8A, F8B, F8C, F8D or GI implementation responsibility and no open gate.
+There is no unresolved F0, F1, F2, F3, F4, F5, F6A, F7, F6B, F8A, F8B, F8C, F8D, GI or F9 implementation responsibility and no open gate.
 
 The next unstarted responsibility is:
 
-> **F9 — Canonical Acceptance.**
+> **F10 — Demo / Submission Readiness.**
 
-F9 is authorized as the next implementation slice but has not been started. No further downstream slice —
-F10 — is authorized.
+F10 is authorized as the next implementation slice but has not been started. F9T — Public Testnet
+Deployment — remains optional and off the critical path.
 
 Known limitations carried forward from F0, none of which blocked G0:
 
@@ -581,11 +581,11 @@ The root `CLAUDE.md` will define the repository operating rules and document aut
 
 ## 18. Next Action
 
-G-I has been reviewed and closed, so the next action is:
+G9 has been reviewed and closed, so the next action is:
 
-> **F9 — Canonical Acceptance.**
+> **F10 — Demo / Submission Readiness.**
 
-F9 may begin when explicitly tasked. Its own verification gate governs advancement beyond the F9 boundary.
+F10 may begin when explicitly tasked. Its own verification gate governs advancement beyond the F10 boundary.
 
 ---
 
@@ -609,15 +609,16 @@ F9 may begin when explicitly tasked. Its own verification gate governs advanceme
 - F8C O2 Input Settlement / Direct Beneficiary Delivery is complete and G8C is closed.
 - F8D O2 Causal Finalization / Remaining Entitlement Reduction is complete and G8D is closed.
 - GI Full Stateful Invariant Verification is complete and G-I is closed.
+- F9 Canonical Acceptance is complete and G9 is closed.
 
 **Current Gate**
 
-- G-I — CLOSED / PASS. No gate is currently open.
+- G9 — CLOSED / PASS. No gate is currently open.
 
 **Next Blocker**
 
-- F9 — Canonical Acceptance has not been started.
+- F10 — Demo / Submission Readiness has not been started.
 
 **Immediate Next Step**
 
-- Begin F9 when explicitly tasked.
+- Begin F10 when explicitly tasked.
