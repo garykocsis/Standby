@@ -5,17 +5,20 @@
 > **Status: Non-normative engineering evidence. This report does not define protocol semantics or independently establish a verification gate.**
 
 Coverage is a measure of what the test suite executed. It is not a measure of semantic correctness, and it
-is not invariant proof. An uncovered line is not, on its own, a protocol defect.
+is not invariant proof. An uncovered line is not, on its own, a protocol defect. Nothing in this report
+establishes, closes, or reopens G-I.
 
 ---
 
 ## Checkpoint
 
 ```text
-Post-F8D / Pre-GI
+Post-GI
 ```
 
-The F0–F8D production path is complete and G8D is PASS / CLOSED. GI has not been started.
+The F0–F8D production path is complete, G8D is PASS / CLOSED, and GI — Full Stateful Invariant Verification
+has passed independent review. This is a diagnostic refresh of the post-F8D baseline recorded in the
+previous revision of this report; that baseline is preserved below for comparison.
 
 ---
 
@@ -24,8 +27,8 @@ The F0–F8D production path is complete and G8D is PASS / CLOSED. GI has not be
 | Item                   | Value                                                             |
 | ---------------------- | ----------------------------------------------------------------- |
 | Measurement date       | 2026-09-08                                                        |
-| Git branch             | `feat/f8d-o2-causal-finalization`                                 |
-| Git commit (`HEAD`)    | `8938a85bb8036424c02c7cae57fc994371573933`                        |
+| Git branch             | `feat/gi-stateful-invariant-verification`                         |
+| Git commit (`HEAD`)    | `e698c22fb6396585cd7bd57cbe120be53b7724cc`                        |
 | Working tree           | **Not clean — the measured state is uncommitted.** See below.     |
 | Foundry                | `1.3.5-stable`, commit `9979a41b5daa5da1572d973d7ac5a3dd2afc0221` |
 | Solidity / EVM         | `0.8.26` / `cancun`                                               |
@@ -35,47 +38,39 @@ The F0–F8D production path is complete and G8D is PASS / CLOSED. GI has not be
 
 ### Working-tree state
 
-`HEAD` is the F8C merge commit. **The Session 14 F8D work was uncommitted when this measurement was taken,
-so this report does not describe the state of commit `8938a85`.** It describes that commit plus the
-following working-tree changes:
-
-Modified:
+`HEAD` is the F8D merge commit. **The Session 15 GI work was uncommitted when this measurement was taken,
+so this report does not describe the state of commit `e698c22`.** It describes that commit plus the
+following working-tree additions, all of which were staged at measurement time:
 
 ```text
-foundry.toml
-docs/setup.md
-src/ExerciseRouter.sol
-src/StandbyHook.sol
-test/harness/UnfinalizedExerciseRouter.sol
-test/integration/ExerciseSettlement.t.sol
+test/invariant/StandbyInvariantHandler.sol
+test/invariant/BaseStandbyInvariantTest.t.sol
+test/invariant/StandbySequenceEvidence.t.sol
+test/invariant/StandbyInvariant.t.sol
+docs/prompts/session-15-gi-full-stateful-invariant-verification.md
+docs/prompts/session-15-log.md
 ```
 
-Added:
-
-```text
-docs/prompts/session-14-f8d-02-causal-finalization.md
-docs/prompts/session-14-log.md
-test/harness/MisdirectedFinalizationRouter.sol
-test/harness/NonFinalizingExerciseRouter.sol
-test/shared/BaseExerciseFinalizationTest.t.sol
-test/unit/ExerciseFinalization.t.sol
-test/integration/ExerciseFinalization.t.sol
-test/fuzz/ExerciseFinalizationFuzz.t.sol
-```
-
-When the Session 14 work is committed, this baseline should be understood as belonging to that commit.
+No production source, script, harness, existing test, frozen artifact, or configuration file differs from
+`e698c22`. When the Session 15 work is committed, this measurement should be understood as belonging to that
+commit.
 
 ---
 
 ## Command and Result
 
+The post-F8D methodology was reconstructed from `docs/prompts/session-14-post-f8d-engineering-baseline.md`
+§5, `docs/prompts/session-14-log.md`, and the previous revision of this report, and was preserved exactly:
+
 ```bash
 forge coverage
 ```
 
-Completed successfully (exit 0): 58 suites, **539 tests passed, 0 failed, 0 skipped**, under coverage
-instrumentation. The default summary report was used; no filtering, exclusion, or `--match` option was
-applied.
+Default profile, default summary report. No filtering, no exclusion, no `--match` option, no
+`--ir-minimum`, and no change to `foundry.toml`.
+
+Completed successfully (exit 0): 60 suites, **579 tests passed, 0 failed, 0 skipped**, under coverage
+instrumentation, in 110.85 s.
 
 A second, read-only invocation was used to locate the individual uncovered items reported below:
 
@@ -84,6 +79,42 @@ forge coverage --report debug
 ```
 
 It produced no repository artifact.
+
+### Compilation obstacle encountered, and what was done about it
+
+The first `forge coverage` invocation **failed to compile**:
+
+```text
+Error: Compiler error (…/LValue.cpp:55): Stack too deep …
+   --> test/invariant/StandbyInvariantHandler.sol:941:82
+```
+
+`forge coverage` disables the optimizer, and the GI handler's ordinary-swap generator held enough locals in
+one frame to exceed the unoptimized stack limit. The optimized build the gates were verified against
+compiles that frame without difficulty, so the failure was visible only under coverage instrumentation.
+
+Two resolutions were possible, and the methodology decided between them. Adding `--ir-minimum` would have
+changed the reconstructed coverage procedure, which this refresh is required to preserve. Splitting the
+generator's amount and price-limit selection into two helper functions changes no behavior and restores the
+established procedure, so that was done:
+
+```text
+test/invariant/StandbyInvariantHandler.sol — _ordinarySwap split into
+    _ordinarySwap / _generatedSwapAmount / _generatedSwapLimitTick
+```
+
+This is a compile-time frame-size change, not a response to a coverage percentage and not a change to what
+the campaigns generate or assert. It was verified as behavior-preserving before this measurement was taken:
+the deterministic diagnostic campaigns reproduce **identical counters** in both configurations, and both
+profiles still pass in full.
+
+| Check after the change | Result |
+| ---------------------- | ------ |
+| `forge fmt --check` | clean |
+| `forge build --sizes` | successful |
+| `forge test` | 579 passed, 0 failed |
+| `FOUNDRY_PROFILE=ci forge test` | 579 passed, 0 failed |
+| GI diagnostic campaign counters | byte-for-byte identical to the pre-change run, both configurations |
 
 ### Material limitations affecting interpretation
 
@@ -96,26 +127,33 @@ It produced no repository artifact.
    files, so test and fixture code is counted alongside protocol code. Both are reported separately below,
    and the production aggregates are computed from the per-file rows rather than reported by Foundry.
 
-3. **`src/mocks/MockUSDC.sol` and `src/mocks/MockUSTB.sol` report 0.00%.** The uncovered items are their
-   `name()` and `symbol()` overrides, which nothing in the suite calls. They are deterministic fixture
+3. **The repository-level row is not comparable across these two checkpoints.** GI added four instrumented
+   test files, so the denominators moved (1361 → 1769 lines). Only the per-file and computed production
+   figures below are like-for-like.
+
+4. **`src/mocks/MockUSDC.sol` and `src/mocks/MockUSTB.sol` still report 0.00%.** The uncovered items are
+   their `name()` and `symbol()` overrides, which nothing in the suite calls. They are deterministic fixture
    currencies, not protocol code.
 
-4. **Coverage counts execution, not intent.** A covered branch is one the suite reached; it is not evidence
-   that what the branch does is correct, and it is not evidence about any invariant.
+5. **Coverage counts execution, not intent.** A covered branch is one the suite reached; it is not evidence
+   that what the branch does is correct, and it is not evidence about any invariant. In particular, the
+   stateful invariant campaigns contribute coverage exactly like any other test, and none of the figures
+   below is evidence for or against G-I.
 
 ---
 
 ## Repository-Level Coverage
 
 Reported by Foundry across all instrumented files (`src/`, `script/`, `test/`). The four dimensions are
-distinct and are deliberately not collapsed into one number.
+distinct and are deliberately not collapsed into one number. See limitation 3: the denominators changed, so
+the post-F8D column is context rather than a comparison.
 
-| Dimension    | Coverage             |
-| ------------ | -------------------- |
-| Lines        | 95.52% (1300 / 1361) |
-| Statements   | 94.72% (1239 / 1308) |
-| Branches     | 79.47% (120 / 151)   |
-| Functions    | 97.03% (294 / 303)   |
+| Dimension    | Post-F8D             | Post-GI              |
+| ------------ | -------------------- | -------------------- |
+| Lines        | 95.52% (1300 / 1361) | 96.21% (1702 / 1769) |
+| Statements   | 94.72% (1239 / 1308) | 95.92% (1694 / 1766) |
+| Branches     | 79.47% (120 / 151)   | 86.94% (193 / 222)   |
+| Functions    | 97.03% (294 / 303)   | 97.01% (357 / 368)   |
 
 ---
 
@@ -123,9 +161,9 @@ distinct and are deliberately not collapsed into one number.
 
 ### Per file, as reported
 
-| File                                 | Lines            | Statements       | Branches       | Functions      |
-| ------------------------------------ | ---------------- | ---------------- | -------------- | -------------- |
-| `src/StandbyHook.sol`                | 99.73% (366/367) | 98.52% (400/406) | 92.77% (77/83) | 100.00% (66/66) |
+| File                                 | Lines            | Statements       | Branches       | Functions       |
+| ------------------------------------ | ---------------- | ---------------- | -------------- | --------------- |
+| `src/StandbyHook.sol`                | 99.73% (366/367) | 98.77% (401/406) | 93.98% (78/83) | 100.00% (66/66) |
 | `src/ExerciseRouter.sol`             | 97.14% (68/70)   | 95.31% (61/64)   | 72.73% (8/11)  | 100.00% (16/16) |
 | `src/EligibilityRegistry.sol`        | 100.00% (20/20)  | 100.00% (14/14)  | 100.00% (2/2)  | 100.00% (8/8)   |
 | `src/libraries/StandbyMath.sol`      | 100.00% (34/34)  | 100.00% (28/28)  | 100.00% (7/7)  | 100.00% (9/9)   |
@@ -136,7 +174,10 @@ distinct and are deliberately not collapsed into one number.
 | `src/mocks/MockUSDC.sol`             | 0.00% (0/4)      | 0.00% (0/2)      | 100.00% (0/0)  | 0.00% (0/2)     |
 | `src/mocks/MockUSTB.sol`             | 0.00% (0/4)      | 0.00% (0/2)      | 100.00% (0/0)  | 0.00% (0/2)     |
 
-Deployment and configuration sources, for completeness:
+`src/StandbyHook.sol` is the only production file whose figures moved: statements 400 → 401 and branches
+77 → 78, out of unchanged denominators. Every other production file is identical to the post-F8D baseline.
+
+Deployment and configuration sources, for completeness — all unchanged from the baseline:
 
 | File                                              | Lines           | Statements      | Branches      | Functions      |
 | ------------------------------------------------- | --------------- | --------------- | ------------- | -------------- |
@@ -144,102 +185,155 @@ Deployment and configuration sources, for completeness:
 | `script/helpers/DeterministicFixtureDeployer.sol` | 81.82% (18/22)  | 85.19% (23/27)  | 25.00% (1/4)  | 100.00% (3/3)  |
 | `script/helpers/HelperConfig.s.sol`               | 100.00% (8/8)   | 100.00% (8/8)   | 100.00% (1/1) | 100.00% (2/2)  |
 
-### Computed aggregates
+### Computed aggregates — post-F8D baseline, post-GI, delta
 
-Summed from the per-file rows above. These are computed here, not reported by Foundry.
+Summed from the per-file rows. These are computed here, not reported by Foundry.
 
 Standby protocol core — the Hook, the ExerciseRouter, the EligibilityRegistry, and the three libraries:
 
-| Dimension  | Coverage           |
-| ---------- | ------------------ |
-| Lines      | 99.42% (514 / 517) |
-| Statements | 98.33% (531 / 540) |
-| Branches   | 91.35% (95 / 104)  |
-| Functions  | 100.00% (107 / 107) |
+| Dimension  | Post-F8D baseline   | Post-GI             | Delta                |
+| ---------- | ------------------- | ------------------- | -------------------- |
+| Lines      | 99.42% (514 / 517)  | 99.42% (514 / 517)  | unchanged            |
+| Statements | 98.33% (531 / 540)  | 98.52% (532 / 540)  | +0.19 pp (+1 stmt)   |
+| Branches   | 91.35% (95 / 104)   | 92.31% (96 / 104)   | +0.96 pp (+1 branch) |
+| Functions  | 100.00% (107 / 107) | 100.00% (107 / 107) | unchanged            |
 
 All of `src/`, including the demo router and the fixture currencies:
 
-| Dimension  | Coverage           |
-| ---------- | ------------------ |
-| Lines      | 98.01% (590 / 602) |
-| Statements | 97.39% (598 / 614) |
-| Branches   | 90.35% (103 / 114) |
-| Functions  | 96.90% (125 / 129) |
+| Dimension  | Post-F8D baseline   | Post-GI             | Delta                |
+| ---------- | ------------------- | ------------------- | -------------------- |
+| Lines      | 98.01% (590 / 602)  | 98.01% (590 / 602)  | unchanged            |
+| Statements | 97.39% (598 / 614)  | 97.56% (599 / 614)  | +0.17 pp (+1 stmt)   |
+| Branches   | 90.35% (103 / 114)  | 91.23% (104 / 114)  | +0.88 pp (+1 branch) |
+| Functions  | 96.90% (125 / 129)  | 96.90% (125 / 129)  | unchanged            |
+
+---
+
+## Newly Covered Production Surfaces Attributable to GI
+
+Exactly one production surface moved from uncovered to covered:
+
+### `src/StandbyHook.sol` L1668 — `_beforeRemoveLiquidity` → `StandbyHook__UntrustedLiquidityPerimeter`
+
+The refusal of a **liquidity removal** proposed by a callback sender that is not the trusted liquidity
+perimeter. It was **potential GI input #1** in the post-F8D report — the one uncovered item there identified
+as intersecting an O3 authority boundary on a backing-affecting transition most directly.
+
+GI reaches it because the invariant handler routes a fraction of its generated liquidity actions through the
+ordinary-swap perimeter rather than the liquidity perimeter, and because the scripted liquidity-perimeter
+sequence performs a removal through the wrong perimeter against an authentic positive obligation. The
+addition-side refusal was already covered before GI; both sides of the liquidity perimeter boundary are now
+covered.
+
+That this branch is now executed says only that the suite reached it. What it is evidence *for* is recorded
+in the GI evidence itself, not here.
 
 ---
 
 ## Material Uncovered Production Areas
 
-Every uncovered production item is listed. Each is a rejection path or a defensive clamp; none is an
-untested economic transition, and none is classified here as a defect.
+Every uncovered production item is listed, as reported by `forge coverage --report debug`. Each is a
+rejection path, a defensive clamp, or fixture metadata; none is an untested economic transition, and none is
+classified here as a defect.
 
-### `src/StandbyHook.sol` — 1 line, 6 statements, 6 branches
+### `src/StandbyHook.sol` — 1 line, 5 statements, 5 branches (was 1 / 6 / 6)
 
 | Location | Construct | Note |
 | -------- | --------- | ---- |
-| L1062 | `authorizeExercise` → `StandbyHook__ServiceNotConfigured` | O2 authorization against a Hook with no service. Every exercise fixture activates a service first. |
-| L1218–1219 | `authorizedProtectedExecution` → `StandbyHook__ExerciseExecutionNotAuthorized` | The read surface consulted while the causal context is not `AUTHORIZED`. The equivalent refusal on the authoritative callback path *is* covered. |
-| L1668 | `_beforeRemoveLiquidity` → `StandbyHook__UntrustedLiquidityPerimeter` | Liquidity **removal** proposed by an untrusted sender. The same refusal on **addition** is covered. |
+| L1062 | `authorizeExercise` → `StandbyHook__ServiceNotConfigured` | O2 authorization against a Hook with no service. Every fixture, GI included, activates a service first. |
+| L1218–1220 | `authorizedProtectedExecution` → `StandbyHook__ExerciseExecutionNotAuthorized` | The read surface consulted while the causal context is not `AUTHORIZED`. The equivalent refusal on the authoritative callback path *is* covered. |
 | L2217 | `_beginSwapDerivation` → `StandbyHook__ServiceNotConfigured` | Prospective swap derivation before activation. |
 | L2343 | `_nextSwapTargetTick` → `tickNext <= TickMath.MIN_TICK` clamp | Mirrors the pinned v4 swap loop's own clamping; reachable only at the extreme tick bound. |
 | L2344 | `_nextSwapTargetTick` → `tickNext >= TickMath.MAX_TICK` clamp | As above, at the opposite bound. |
 
-### `src/ExerciseRouter.sol` — 2 lines, 3 statements, 3 branches
+`L1668` — previously in this table — is now covered.
+
+### `src/ExerciseRouter.sol` — 2 lines, 3 statements, 3 branches (unchanged)
 
 | Location | Construct | Note |
 | -------- | --------- | ---- |
-| L395–396 | `ExerciseRouter__InputTransferFailed` | Reached only when `transferFrom` returns `false` without reverting. The fixture currency reverts with its own typed errors instead, and those failure modes *are* covered. |
+| L395–396 | `ExerciseRouter__InputTransferFailed` | Reached only when `transferFrom` returns `false` without reverting. The fixture currencies revert with typed errors instead, and those failure modes *are* covered. |
 | L441–443 | `ExerciseRouter__UnresolvedExerciseDelta` | The fail-closed guard for an exercise leaving an open PoolManager delta. Settlement and delivery close each side exactly, so no reachable path leaves one open. |
 | L475 | `ExerciseRouter__ExerciseContextAlreadyActive` | A nested `exercise()` while one is already in flight. |
 
-### `src/demo/ActorAwareTestRouter.sol` — 2 statements, 2 branches
+### `src/demo/ActorAwareTestRouter.sol` — 2 statements, 2 branches (unchanged)
 
 `ActorAwareTestRouter__NotPoolManager` (L195) and `ActorAwareTestRouter__SettlementTransferFailed` (L244).
 This contract is demo and test-perimeter instrumentation, not protocol.
 
-### `src/mocks/` — fixture metadata
+### `src/mocks/` — fixture metadata (unchanged)
 
 `MockUSDC.name/symbol` and `MockUSTB.name/symbol` are never called; `MockFixtureCurrency` L118 is the
 allowance-decrement path taken only when the allowance is not `type(uint256).max`.
 
-### `script/DeployStandbyHook.s.sol` — 22 lines, 25 statements, 6 branches
+### `script/DeployStandbyHook.s.sol` — 22 lines, 25 statements, 6 branches (unchanged)
 
-The lowest production-adjacent figure in the repository. The mining and validation procedure is exercised
-by every fixture, but the broadcasting `run()` entrypoint and its validation failure branches are not
-reached by `forge test` — consistent with the limitation already recorded in `docs/project-status.md`, that
-`run()` is verified in script simulation rather than against a live node.
+The mining and validation procedure is exercised by every fixture, but the broadcasting `run()` entrypoint
+and its validation failure branches are not reached by `forge test` — consistent with the limitation already
+recorded in `docs/project-status.md`, that `run()` is verified in script simulation rather than against a
+live node.
 
 ---
 
-## Potential GI Inputs
+## Classification of What Remains
 
-Recorded as **potential inputs to GI derivation, not as established GI requirements.** GI has not been
-started and no derivation was performed here. Whether any of these belongs in GI is for GI's own derivation
-to decide against `docs/invariants.md` and `docs/testing-strategy.md`.
+### Semantically relevant, and still uncovered
 
-1. **Untrusted-perimeter liquidity removal** (`StandbyHook.sol` L1668). An O3 authority boundary on a
-   backing-affecting transition. A GI handler that generates liquidity actions from arbitrary senders would
-   intersect this path directly.
+- **`ExerciseRouter.sol` L475 — nested `exercise()` refusal.** This was **potential GI input #2** in the
+  post-F8D report and GI did not reach it. GI generates top-level actions, so it cannot nest one exercise
+  inside another; the Session 15 record states this as a known reachability gap rather than as covered. The
+  adjacent Hook-side restriction — a second authorization while one is unresolved — is covered, and the
+  router's one-originator-per-request discipline has its own periphery evidence
+  (`test/periphery/ActorAttribution.t.sol` covers the equivalent restriction on the shared perimeter). This
+  is the one remaining uncovered item that is a genuine authority-boundary rejection rather than a
+  defensive guard.
 
-2. **Nested exercise attribution** (`ExerciseRouter.sol` L475). The router's one-originator-per-request
-   discipline. It sits beside the Hook's own overlapping-authorization restriction, which is covered, and
-   the economic-reentrancy restriction of `uniswap-v4-realization.md` §16.3 is an invariant-relevant
-   property.
+- **`StandbyHook.sol` L1218–1220 — causal-position refusal on `authorizedProtectedExecution`.** A read
+  surface, whose equivalent refusal on the authoritative callback path is covered. §28 of the GI session
+  prompt deliberately declined to make this a GI obligation, and this refresh does not reopen that.
 
-3. **The causal-position refusal on the read surface** (`StandbyHook.sol` L1218–1219). A sequence-dependent
-   guard on a surface an adversarial handler could consult at any causal position.
+### Diagnostic, defensive, or structurally unreachable through the supported production domain
 
-4. **Tick-bound clamping in the prospective swap derivation** (`StandbyHook.sol` L2343–2344). Reachable only
-   outside the configured service domain. A GI swap handler with deliberately extreme inputs is the kind of
-   generator that would reach it, and the prospective derivation is the authoritative input to backing
-   enforcement.
+- **`StandbyHook.sol` L1062 and L2217 — `ServiceNotConfigured`.** Unreachable once a service exists, which
+  every fixture and every campaign establishes first. Their equivalents elsewhere in the Hook are covered.
+- **`StandbyHook.sol` L2343–2344 — tick-bound clamps.** Reachable only outside the configured service
+  domain, which enforcement prevents any authoritative transition from entering. They mirror the pinned v4
+  swap loop's own clamping and remain principally an F5 derivation concern.
+- **`ExerciseRouter.sol` L395–396 — `InputTransferFailed`.** Requires a currency that returns `false`
+  instead of reverting; the supported fixture currencies revert.
+- **`ExerciseRouter.sol` L441–443 — `UnresolvedExerciseDelta`.** Structurally unreachable on the production
+  path: settlement and delivery close each side exactly, and the guard exists to fail closed if they ever
+  did not.
+- **`ActorAwareTestRouter` and `src/mocks/`.** Demo perimeter and fixture instrumentation, not protocol.
+- **`script/DeployStandbyHook.s.sol` `run()`.** Broadcast entrypoint, already recorded as verified in script
+  simulation only.
 
-5. **The unresolved-delta guard** (`ExerciseRouter.sol` L441–443). Structurally unreachable on the current
-   production path. Noted because it is the router's own fail-closed statement about exercise-local delta
-   isolation (RR-O2-15), and adversarial sequencing is what GI generates.
+### Test-side instrumentation notes
 
-Items 1 and 2 are the two that intersect an authority or state-transition boundary most directly. Items 3–5
-are noted for completeness.
+Two GI handler functions, `scriptedSetTraderEligibility` and `scriptedSetLiquidityEligibility`, are reported
+as 0-hit *functions* while every statement inside them is covered. Both are called only internally by the
+generated-action entry points, never through an external call, and the campaign counters record 25 and 52
+accepted mutations respectively — so this is a function-entry attribution artifact of the instrumentation,
+not dead code. The remaining uncovered GI test statements are the `assertTrue(false, …)` arms that exist
+precisely so that they never execute: the orphan-authorization and orphan-finalization success branches, the
+"an admitted commitment must occupy a bounded enforcement reference" guard, and the ordered-currency
+deployment fallback.
 
-The two `ServiceNotConfigured` refusals and the fixture-currency metadata are **not** proposed as GI inputs:
-GI operates against an activated service, and the mocks carry no protocol behavior.
+---
+
+## Disposition of the Post-F8D "Potential GI Inputs"
+
+The previous revision recorded five uncovered items as **potential** GI inputs. GI has since been derived,
+implemented, and independently reviewed. Their disposition, recorded here for continuity only:
+
+| # | Item | Disposition |
+| - | ---- | ----------- |
+| 1 | Untrusted-perimeter liquidity removal (`StandbyHook.sol` L1668) | **Taken up by GI and now covered** — generated wrong-perimeter liquidity actions plus a scripted liquidity-perimeter sequence. |
+| 2 | Nested exercise attribution (`ExerciseRouter.sol` L475) | **Considered, not reachable by GI.** GI acts at top level; recorded as a known reachability gap in `docs/prompts/session-15-log.md`. Still uncovered. |
+| 3 | Causal-position refusal on the read surface (`StandbyHook.sol` L1218–1220) | **Deliberately excluded** by §28 of the GI session prompt. Still uncovered. |
+| 4 | Tick-bound clamping (`StandbyHook.sol` L2343–2344) | **Deliberately excluded** by §28 unless GI exposed a reachable compositional counterexample; it did not. Still uncovered. |
+| 5 | Unresolved-delta guard (`ExerciseRouter.sol` L441–443) | **Structurally unreachable** on the production path; GI's completed exercises resolve both sides exactly. Still uncovered. |
+
+No coverage observation in this refresh exposed a previously unrecognized frozen verification obligation. No
+test was added, removed, weakened, or suppressed to affect coverage, and no production code was excluded
+from measurement or changed in any way.
