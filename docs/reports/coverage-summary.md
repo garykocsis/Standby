@@ -13,12 +13,17 @@ establishes, closes, or reopens G-I.
 ## Checkpoint
 
 ```text
-Post-GI
+Post-F10 / Pre-G10 review
 ```
 
-The F0–F8D production path is complete, G8D is PASS / CLOSED, and GI — Full Stateful Invariant Verification
-has passed independent review. This is a diagnostic refresh of the post-F8D baseline recorded in the
-previous revision of this report; that baseline is preserved below for comparison.
+The F0–F8D production path is complete, G8D is PASS / CLOSED, GI and F9 have both passed independent review,
+and F10 — Demo / Submission Readiness — is implemented and awaiting independent G10 review. This is a
+diagnostic refresh of the post-GI measurement recorded in the previous revision of this report; the post-F8D
+and post-GI figures are preserved below for comparison.
+
+The previous revision was taken before F9 existed, so the movement between it and this one spans **F9 and
+F10 together**. Attribution is stated wherever it matters. F10 itself changed no file under `src/` and no
+existing test, so it cannot have moved any production coverage figure — and, as recorded below, it did not.
 
 ---
 
@@ -26,9 +31,9 @@ previous revision of this report; that baseline is preserved below for compariso
 
 | Item                   | Value                                                             |
 | ---------------------- | ----------------------------------------------------------------- |
-| Measurement date       | 2026-09-08                                                        |
-| Git branch             | `feat/gi-stateful-invariant-verification`                         |
-| Git commit (`HEAD`)    | `e698c22fb6396585cd7bd57cbe120be53b7724cc`                        |
+| Measurement date       | 2026-09-10                                                        |
+| Git branch             | `feat/f10-demo-submission-readiness`                              |
+| Git commit (`HEAD`)    | `ab67d5e63511c1c0427a0a1790fbcddae8d5ce98`                        |
 | Working tree           | **Not clean — the measured state is uncommitted.** See below.     |
 | Foundry                | `1.3.5-stable`, commit `9979a41b5daa5da1572d973d7ac5a3dd2afc0221` |
 | Solidity / EVM         | `0.8.26` / `cancun`                                               |
@@ -38,29 +43,45 @@ previous revision of this report; that baseline is preserved below for compariso
 
 ### Working-tree state
 
-`HEAD` is the F8D merge commit. **The Session 15 GI work was uncommitted when this measurement was taken,
-so this report does not describe the state of commit `e698c22`.** It describes that commit plus the
-following working-tree additions, all of which were staged at measurement time:
+`HEAD` is the F9 merge commit. **The Session 17 F10 work was uncommitted when this measurement was taken,
+so this report does not describe the state of commit `ab67d5e`.** It describes that commit plus the
+following working-tree changes:
+
+Modified:
 
 ```text
-test/invariant/StandbyInvariantHandler.sol
-test/invariant/BaseStandbyInvariantTest.t.sol
-test/invariant/StandbySequenceEvidence.t.sol
-test/invariant/StandbyInvariant.t.sol
-docs/prompts/session-15-gi-full-stateful-invariant-verification.md
-docs/prompts/session-15-log.md
+.gas-snapshot
+.gitignore
+docs/setup.md
+docs/reports/gas-snapshot.md
+docs/reports/coverage-summary.md
 ```
 
-No production source, script, harness, existing test, frozen artifact, or configuration file differs from
-`e698c22`. When the Session 15 work is committed, this measurement should be understood as belonging to that
-commit.
+Added:
+
+```text
+README.md
+script/DemoActions.s.sol
+script/demo/run-demo-environment.sh
+frontend/
+docs/prompts/session-17-f10-demo-submission-readiness.md
+docs/prompts/session-17-log.md
+```
+
+**No file under `src/`, no existing script, no harness, no test, no frozen artifact, and no Foundry
+configuration file differs from `ab67d5e`.** Exactly one added file is instrumented by `forge coverage`:
+`script/DemoActions.s.sol`. Everything else F10 added is a shell script, JavaScript, or Markdown, none of
+which Foundry measures.
+
+When the Session 17 work is committed, this measurement should be understood as belonging to that commit.
 
 ---
 
 ## Command and Result
 
-The post-F8D methodology was reconstructed from `docs/prompts/session-14-post-f8d-engineering-baseline.md`
-§5, `docs/prompts/session-14-log.md`, and the previous revision of this report, and was preserved exactly:
+The methodology recorded in the previous revision of this report — itself reconstructed from
+`docs/prompts/session-14-post-f8d-engineering-baseline.md` §5 and `docs/prompts/session-14-log.md` — was
+preserved exactly:
 
 ```bash
 forge coverage
@@ -69,8 +90,8 @@ forge coverage
 Default profile, default summary report. No filtering, no exclusion, no `--match` option, no
 `--ir-minimum`, and no change to `foundry.toml`.
 
-Completed successfully (exit 0): 60 suites, **579 tests passed, 0 failed, 0 skipped**, under coverage
-instrumentation, in 110.85 s.
+Completed successfully (exit 0): 62 suites, **590 tests passed, 0 failed, 0 skipped**, under coverage
+instrumentation, in 112.20 s.
 
 A second, read-only invocation was used to locate the individual uncovered items reported below:
 
@@ -80,41 +101,12 @@ forge coverage --report debug
 
 It produced no repository artifact.
 
-### Compilation obstacle encountered, and what was done about it
+### Compilation obstacle — resolved at the previous checkpoint
 
-The first `forge coverage` invocation **failed to compile**:
-
-```text
-Error: Compiler error (…/LValue.cpp:55): Stack too deep …
-   --> test/invariant/StandbyInvariantHandler.sol:941:82
-```
-
-`forge coverage` disables the optimizer, and the GI handler's ordinary-swap generator held enough locals in
-one frame to exceed the unoptimized stack limit. The optimized build the gates were verified against
-compiles that frame without difficulty, so the failure was visible only under coverage instrumentation.
-
-Two resolutions were possible, and the methodology decided between them. Adding `--ir-minimum` would have
-changed the reconstructed coverage procedure, which this refresh is required to preserve. Splitting the
-generator's amount and price-limit selection into two helper functions changes no behavior and restores the
-established procedure, so that was done:
-
-```text
-test/invariant/StandbyInvariantHandler.sol — _ordinarySwap split into
-    _ordinarySwap / _generatedSwapAmount / _generatedSwapLimitTick
-```
-
-This is a compile-time frame-size change, not a response to a coverage percentage and not a change to what
-the campaigns generate or assert. It was verified as behavior-preserving before this measurement was taken:
-the deterministic diagnostic campaigns reproduce **identical counters** in both configurations, and both
-profiles still pass in full.
-
-| Check after the change | Result |
-| ---------------------- | ------ |
-| `forge fmt --check` | clean |
-| `forge build --sizes` | successful |
-| `forge test` | 579 passed, 0 failed |
-| `FOUNDRY_PROFILE=ci forge test` | 579 passed, 0 failed |
-| GI diagnostic campaign counters | byte-for-byte identical to the pre-change run, both configurations |
+The post-GI refresh had to split the GI handler's ordinary-swap generator into three functions to compile
+under `forge coverage`, which disables the optimizer. That change is committed and this run compiled and
+completed with no obstacle and no procedural deviation. Nothing about the procedure was changed for this
+refresh.
 
 ### Material limitations affecting interpretation
 
@@ -127,15 +119,22 @@ profiles still pass in full.
    files, so test and fixture code is counted alongside protocol code. Both are reported separately below,
    and the production aggregates are computed from the per-file rows rather than reported by Foundry.
 
-3. **The repository-level row is not comparable across these two checkpoints.** GI added four instrumented
-   test files, so the denominators moved (1361 → 1769 lines). Only the per-file and computed production
-   figures below are like-for-like.
+3. **The repository-level row is not comparable across these checkpoints.** GI added four instrumented test
+   files and F9 added three more plus two scripts; F10 added one script. The denominators have therefore
+   moved twice (1361 → 1769 → 2010 lines). Only the per-file and computed production figures below are
+   like-for-like.
 
-4. **`src/mocks/MockUSDC.sol` and `src/mocks/MockUSTB.sol` still report 0.00%.** The uncovered items are
-   their `name()` and `symbol()` overrides, which nothing in the suite calls. They are deterministic fixture
-   currencies, not protocol code.
+4. **`src/mocks/MockUSDC.sol` and `src/mocks/MockUSTB.sol` now report 50.00%.** F9's bootstrap-fidelity
+   suite reads their `symbol()` overrides; the `name()` overrides remain uncalled. They are deterministic
+   fixture currencies, not protocol code.
 
-5. **Coverage counts execution, not intent.** A covered branch is one the suite reached; it is not evidence
+5. **`script/DemoActions.s.sol` reports 0.00% and is expected to.** It is the F10 operational path through
+   the four canonical judged actions, and it is not driven by `forge test` — it is verified by execution
+   against a deterministic Anvil environment, recorded in `docs/prompts/session-17-log.md`. Foundry
+   instruments it because it lives under `script/`, so it enters the repository-level denominators without
+   ever being exercised by the suite. See the note under Production Coverage.
+
+6. **Coverage counts execution, not intent.** A covered branch is one the suite reached; it is not evidence
    that what the branch does is correct, and it is not evidence about any invariant. In particular, the
    stateful invariant campaigns contribute coverage exactly like any other test, and none of the figures
    below is evidence for or against G-I.
@@ -148,12 +147,18 @@ Reported by Foundry across all instrumented files (`src/`, `script/`, `test/`). 
 distinct and are deliberately not collapsed into one number. See limitation 3: the denominators changed, so
 the post-F8D column is context rather than a comparison.
 
-| Dimension    | Post-F8D             | Post-GI              |
-| ------------ | -------------------- | -------------------- |
-| Lines        | 95.52% (1300 / 1361) | 96.21% (1702 / 1769) |
-| Statements   | 94.72% (1239 / 1308) | 95.92% (1694 / 1766) |
-| Branches     | 79.47% (120 / 151)   | 86.94% (193 / 222)   |
-| Functions    | 97.03% (294 / 303)   | 97.01% (357 / 368)   |
+| Dimension    | Post-F8D             | Post-GI              | Post-F10             |
+| ------------ | -------------------- | -------------------- | -------------------- |
+| Lines        | 95.52% (1300 / 1361) | 96.21% (1702 / 1769) | 90.70% (1823 / 2010) |
+| Statements   | 94.72% (1239 / 1308) | 95.92% (1694 / 1766) | 90.53% (1816 / 2006) |
+| Branches     | 79.47% (120 / 151)   | 86.94% (193 / 222)   | 84.05% (195 / 232)   |
+| Functions    | 97.03% (294 / 303)   | 97.01% (357 / 368)   | 92.18% (377 / 409)   |
+
+The repository-level row fell because the denominators grew by 241 uninstrumented-by-tests lines while the
+numerators grew by 121. Almost all of that gap is one file: `script/DemoActions.s.sol` contributes 94 lines,
+90 statements, 3 branches and 17 functions at zero hits. Removing that single operational script from the
+row recovers 95.15% lines / 94.78% statements / 85.15% branches / 96.17% functions — in line with the
+previous checkpoints. This is report scope, not lost verification.
 
 ---
 
@@ -171,47 +176,84 @@ the post-F8D column is context rather than a comparison.
 | `src/libraries/CommitmentRefs.sol`   | 100.00% (7/7)    | 100.00% (9/9)    | 100.00% (0/0)  | 100.00% (2/2)   |
 | `src/demo/ActorAwareTestRouter.sol`  | 100.00% (50/50)  | 95.83% (46/48)   | 71.43% (5/7)   | 100.00% (12/12) |
 | `src/mocks/MockFixtureCurrency.sol`  | 96.30% (26/27)   | 95.45% (21/22)   | 100.00% (3/3)  | 100.00% (6/6)   |
-| `src/mocks/MockUSDC.sol`             | 0.00% (0/4)      | 0.00% (0/2)      | 100.00% (0/0)  | 0.00% (0/2)     |
-| `src/mocks/MockUSTB.sol`             | 0.00% (0/4)      | 0.00% (0/2)      | 100.00% (0/0)  | 0.00% (0/2)     |
+| `src/mocks/MockUSDC.sol`             | 50.00% (2/4)     | 50.00% (1/2)     | 100.00% (0/0)  | 50.00% (1/2)    |
+| `src/mocks/MockUSTB.sol`             | 50.00% (2/4)     | 50.00% (1/2)     | 100.00% (0/0)  | 50.00% (1/2)    |
 
-`src/StandbyHook.sol` is the only production file whose figures moved: statements 400 → 401 and branches
-77 → 78, out of unchanged denominators. Every other production file is identical to the post-F8D baseline.
+**Every `src/` file except the two mock currencies is identical to the post-GI measurement, figure for
+figure.** The two mocks moved from 0.00% to 50.00% because F9's bootstrap-fidelity suite reads their
+`symbol()` overrides. No production file moved at F10, which is what a slice that changed no `src/` file
+must produce.
 
-Deployment and configuration sources, for completeness — all unchanged from the baseline:
+Deployment and configuration sources, for completeness:
 
 | File                                              | Lines           | Statements      | Branches      | Functions      |
 | ------------------------------------------------- | --------------- | --------------- | ------------- | -------------- |
 | `script/DeployStandbyHook.s.sol`                  | 47.62% (20/42)  | 46.81% (22/47)  | 0.00% (0/6)   | 66.67% (2/3)   |
+| `script/DeployDemoEnvironment.s.sol`              | 50.00% (14/28)  | 50.00% (14/28)  | 100.00% (0/0) | 33.33% (1/3)   |
+| `script/BootstrapStandby.s.sol`                   | 78.67% (59/75)  | 78.08% (57/73)  | 0.00% (0/5)   | 63.64% (7/11)  |
+| `script/DemoActions.s.sol`                        | 0.00% (0/94)    | 0.00% (0/90)    | 0.00% (0/3)   | 0.00% (0/17)   |
 | `script/helpers/DeterministicFixtureDeployer.sol` | 81.82% (18/22)  | 85.19% (23/27)  | 25.00% (1/4)  | 100.00% (3/3)  |
 | `script/helpers/HelperConfig.s.sol`               | 100.00% (8/8)   | 100.00% (8/8)   | 100.00% (1/1) | 100.00% (2/2)  |
 
-### Computed aggregates — post-F8D baseline, post-GI, delta
+The `DeployDemoEnvironment` and `BootstrapStandby` rows are new to this report because the previous revision
+predated F9. Both are partially covered because the canonical acceptance fixture constructs its systems
+through them; the uncovered halves are their `run()` entrypoints and the `STANDBY_*` environment readers,
+which only an operator invocation reaches.
+
+`script/DemoActions.s.sol` is the F10 addition and is **entirely uncovered by `forge test`, by design.** It
+is the operational non-browser path through A1–A4 and has no `forge test` caller: it acts on a deployed,
+bootstrapped environment named by environment variables, which is not a state the Solidity suite constructs.
+It is verified the way an operational script is verified — by running it against a deterministic Anvil
+environment and checking the authoritative result — and that run is recorded in
+`docs/prompts/session-17-log.md`, including the requirement the script enforces on itself: that A3 be
+refused specifically by the Standby backing rejection carrying both compared quantities. No test was added
+to cover it, because a test driving it would re-prove the canonical acceptance history the F9 suite already
+proves through the same production calls.
+
+### Computed aggregates — post-F8D baseline, post-GI, post-F10
 
 Summed from the per-file rows. These are computed here, not reported by Foundry.
 
 Standby protocol core — the Hook, the ExerciseRouter, the EligibilityRegistry, and the three libraries:
 
-| Dimension  | Post-F8D baseline   | Post-GI             | Delta                |
-| ---------- | ------------------- | ------------------- | -------------------- |
-| Lines      | 99.42% (514 / 517)  | 99.42% (514 / 517)  | unchanged            |
-| Statements | 98.33% (531 / 540)  | 98.52% (532 / 540)  | +0.19 pp (+1 stmt)   |
-| Branches   | 91.35% (95 / 104)   | 92.31% (96 / 104)   | +0.96 pp (+1 branch) |
-| Functions  | 100.00% (107 / 107) | 100.00% (107 / 107) | unchanged            |
+| Dimension  | Post-F8D baseline   | Post-GI             | Post-F10            | Delta vs post-GI |
+| ---------- | ------------------- | ------------------- | ------------------- | ---------------- |
+| Lines      | 99.42% (514 / 517)  | 99.42% (514 / 517)  | 99.42% (514 / 517)  | unchanged        |
+| Statements | 98.33% (531 / 540)  | 98.52% (532 / 540)  | 98.52% (532 / 540)  | unchanged        |
+| Branches   | 91.35% (95 / 104)   | 92.31% (96 / 104)   | 92.31% (96 / 104)   | unchanged        |
+| Functions  | 100.00% (107 / 107) | 100.00% (107 / 107) | 100.00% (107 / 107) | unchanged        |
+
+This is the aggregate the F10 session prompt records as the entering-F10 baseline
+(99.42 / 98.52 / 92.31 / 100). It is reproduced exactly.
 
 All of `src/`, including the demo router and the fixture currencies:
 
-| Dimension  | Post-F8D baseline   | Post-GI             | Delta                |
-| ---------- | ------------------- | ------------------- | -------------------- |
-| Lines      | 98.01% (590 / 602)  | 98.01% (590 / 602)  | unchanged            |
-| Statements | 97.39% (598 / 614)  | 97.56% (599 / 614)  | +0.17 pp (+1 stmt)   |
-| Branches   | 90.35% (103 / 114)  | 91.23% (104 / 114)  | +0.88 pp (+1 branch) |
-| Functions  | 96.90% (125 / 129)  | 96.90% (125 / 129)  | unchanged            |
+| Dimension  | Post-F8D baseline   | Post-GI             | Post-F10            | Delta vs post-GI     |
+| ---------- | ------------------- | ------------------- | ------------------- | -------------------- |
+| Lines      | 98.01% (590 / 602)  | 98.01% (590 / 602)  | 98.67% (594 / 602)  | +0.66 pp (+4 lines)  |
+| Statements | 97.39% (598 / 614)  | 97.56% (599 / 614)  | 97.88% (601 / 614)  | +0.32 pp (+2 stmts)  |
+| Branches   | 90.35% (103 / 114)  | 91.23% (104 / 114)  | 91.23% (104 / 114)  | unchanged            |
+| Functions  | 96.90% (125 / 129)  | 96.90% (125 / 129)  | 98.45% (127 / 129)  | +1.55 pp (+2 fns)    |
+
+The entire movement is the two mock currencies' `symbol()` overrides, reached by F9's bootstrap-fidelity
+suite. Denominators are unchanged, because F10 added nothing to `src/`.
 
 ---
 
-## Newly Covered Production Surfaces Attributable to GI
+## Newly Covered Production Surfaces Since the Previous Revision
 
-Exactly one production surface moved from uncovered to covered:
+Attributable to **F9**: `MockUSDC.symbol()` and `MockUSTB.symbol()`, read by the bootstrap-fidelity suite
+when it checks that the canonical currencies were deployed in the canonical order. Fixture metadata, not
+protocol code.
+
+Attributable to **F10**: none. F10 executed no production line the suite was not already executing, which
+is the expected result for a slice that added no production code and no test.
+
+The GI attribution recorded in the previous revision is preserved below for continuity.
+
+### Previously recorded — attributable to GI
+
+Exactly one production surface moved from uncovered to covered at that checkpoint:
 
 ### `src/StandbyHook.sol` L1668 — `_beforeRemoveLiquidity` → `StandbyHook__UntrustedLiquidityPerimeter`
 
@@ -236,7 +278,7 @@ Every uncovered production item is listed, as reported by `forge coverage --repo
 rejection path, a defensive clamp, or fixture metadata; none is an untested economic transition, and none is
 classified here as a defect.
 
-### `src/StandbyHook.sol` — 1 line, 5 statements, 5 branches (was 1 / 6 / 6)
+### `src/StandbyHook.sol` — 1 line, 5 statements, 5 branches (unchanged since post-GI)
 
 | Location | Construct | Note |
 | -------- | --------- | ---- |
@@ -246,7 +288,7 @@ classified here as a defect.
 | L2343 | `_nextSwapTargetTick` → `tickNext <= TickMath.MIN_TICK` clamp | Mirrors the pinned v4 swap loop's own clamping; reachable only at the extreme tick bound. |
 | L2344 | `_nextSwapTargetTick` → `tickNext >= TickMath.MAX_TICK` clamp | As above, at the opposite bound. |
 
-`L1668` — previously in this table — is now covered.
+`L1668` — in this table at the post-F8D checkpoint — was covered by GI and remains so.
 
 ### `src/ExerciseRouter.sol` — 2 lines, 3 statements, 3 branches (unchanged)
 
@@ -261,17 +303,29 @@ classified here as a defect.
 `ActorAwareTestRouter__NotPoolManager` (L195) and `ActorAwareTestRouter__SettlementTransferFailed` (L244).
 This contract is demo and test-perimeter instrumentation, not protocol.
 
-### `src/mocks/` — fixture metadata (unchanged)
+### `src/mocks/` — fixture metadata (improved)
 
-`MockUSDC.name/symbol` and `MockUSTB.name/symbol` are never called; `MockFixtureCurrency` L118 is the
-allowance-decrement path taken only when the allowance is not `type(uint256).max`.
+`MockUSDC.name` and `MockUSTB.name` are never called; their `symbol` overrides are now covered.
+`MockFixtureCurrency` L118 is the allowance-decrement path taken only when the allowance is not
+`type(uint256).max`.
 
 ### `script/DeployStandbyHook.s.sol` — 22 lines, 25 statements, 6 branches (unchanged)
 
 The mining and validation procedure is exercised by every fixture, but the broadcasting `run()` entrypoint
 and its validation failure branches are not reached by `forge test` — consistent with the limitation already
 recorded in `docs/project-status.md`, that `run()` is verified in script simulation rather than against a
-live node.
+live node. The same applies to the `run()` entrypoints of `DeployDemoEnvironment` and `BootstrapStandby`,
+whose reusable procedures are fully exercised by the acceptance fixture.
+
+At F10, all three of those entrypoints and `script/DemoActions.s.sol` in full were additionally executed
+against a live deterministic Anvil node with `--broadcast`, which is the verification the suite cannot
+provide. That is operational evidence recorded in `docs/prompts/session-17-log.md`, and it does not appear
+in any figure in this report.
+
+### `script/DemoActions.s.sol` — 94 lines, 90 statements, 3 branches, 17 functions (new, uncovered)
+
+The complete file. It is the F10 operational path through the four canonical judged actions and has no
+`forge test` caller by design; see the note under Production Coverage.
 
 ---
 
@@ -337,3 +391,15 @@ implemented, and independently reviewed. Their disposition, recorded here for co
 No coverage observation in this refresh exposed a previously unrecognized frozen verification obligation. No
 test was added, removed, weakened, or suppressed to affect coverage, and no production code was excluded
 from measurement or changed in any way.
+
+---
+
+## F10 Disposition
+
+| Question                                                     | Answer                                                                 |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| Did the protocol-core aggregate regress?                      | **No.** 99.42 / 98.52 / 92.31 / 100 reproduced exactly.                |
+| Did any `src/` file lose coverage?                            | **No.** Every file is identical or improved.                           |
+| Did F10 introduce untested code?                              | **Yes, deliberately:** `script/DemoActions.s.sol`, an operational script verified by execution against a deterministic Anvil environment rather than by `forge test`. |
+| Is the repository-level drop a verification loss?             | **No.** It is report scope: one uncovered operational script entering the denominators. |
+| Was anything changed in response to a coverage percentage?    | **No.**                                                                |

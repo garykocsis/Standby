@@ -30,3 +30,6 @@ frontend/dist/
 
 # tmp directory
 tmp/
+# Generated demo environment manifest
+demo.env
+frontend/public/standby-demo.json

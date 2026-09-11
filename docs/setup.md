@@ -898,3 +898,100 @@ Under `forge test` the same functions are called directly and the broadcast chea
 acceptance evidence and operational use run one implementation rather than two.
 
 `.env` is git-ignored. Never commit deployment keys or addresses that carry authority.
+
+---
+
+# Deterministic Demo Environment
+
+The canonical judged demonstration runs against a deterministic local Anvil node with the real pinned
+Uniswap v4 execution stack. Only the two demo currencies are mocks. No public testnet is involved.
+
+## One-command environment
+
+```bash
+anvil                                     # in its own terminal
+forge build                               # produces the ABIs the frontend reads
+./script/demo/run-demo-environment.sh
+```
+
+`script/demo/run-demo-environment.sh` constructs nothing itself. It assigns the deterministic default Anvil
+accounts to the seven distinct roles, invokes `DeployDemoEnvironment` and then `BootstrapStandby` against
+the running node, and reads the canonical proposed-transaction parameters back out of `DemoActions`. It then
+writes two generated, git-ignored files:
+
+| File                                | Consumer                                                             |
+| ----------------------------------- | -------------------------------------------------------------------- |
+| `frontend/public/standby-demo.json` | the interface: addresses, role accounts, canonical demo parameters   |
+| `demo.env`                          | the shell: the same manifest as the `STANDBY_*` variables scripts read |
+
+`RPC_URL` overrides the endpoint; it defaults to `http://127.0.0.1:8545`.
+
+The run stops at exactly the canonical pre-A1 state — `S = 80,000 MockUSDC`, `O = 0`, no commitment — which
+bootstrap itself verifies against the frozen fixture expectations before returning. No commitment is
+pre-created.
+
+## Canonical actions without a browser
+
+`script/DemoActions.s.sol` performs the four canonical judged actions as real production transitions. It
+deploys nothing and bootstraps nothing, and reads the same `STANDBY_*` manifest bootstrap reads:
+
+```bash
+source demo.env
+forge script script/DemoActions.s.sol --rpc-url $RPC_URL --broadcast --unlocked --sender $STANDBY_DEPLOYER
+```
+
+Individual stages run through the same script:
+
+```bash
+forge script script/DemoActions.s.sol --sig 'admitCommitment()'                --rpc-url $RPC_URL --broadcast --unlocked --sender $STANDBY_DEPLOYER
+forge script script/DemoActions.s.sol --sig 'compatibleOrdinarySwap()'         --rpc-url $RPC_URL --broadcast --unlocked --sender $STANDBY_DEPLOYER
+forge script script/DemoActions.s.sol --sig 'attemptDestructiveOrdinarySwap()' --rpc-url $RPC_URL
+forge script script/DemoActions.s.sol --sig 'exerciseCommitment(uint256)' 1    --rpc-url $RPC_URL --broadcast --unlocked --sender $STANDBY_DEPLOYER
+```
+
+A3 is the one action that must not succeed. It is performed as a simulated attempt rather than a broadcast
+transaction — a rejected transition never becomes authoritative, so there is no transaction to send — and
+the script reverts unless the refusal is exactly the Standby backing-capacity rejection carrying the
+prospective capacity and the obligation the Hook compared.
+
+## Reset
+
+Reset is environmental:
+
+```text
+stop Anvil -> start Anvil -> ./script/demo/run-demo-environment.sh
+```
+
+Standby has no reset, restore, clear, or seed function. The ability to reset a demonstration must never
+become protocol authority.
+
+---
+
+# Frontend Setup
+
+The demo interface lives in `frontend/` and is a React 18 / Vite 5 / Tailwind 3 application using `viem`.
+It is instrumentation over authoritative chain state; `frontend/README.md` documents its layout and its
+authoritative read map.
+
+Requirements: Node.js `^20.19` or `>=22.12`, and a completed `forge build` — the frontend imports its ABIs from the
+Foundry build output in `out/`, so the interface it calls cannot drift from the deployed bytecode. Vite is
+configured to serve from the repository root for that reason.
+
+```bash
+cd frontend
+npm ci                 # install from package-lock.json
+npm run dev            # http://localhost:5173
+npm run build          # production build
+npm run lint           # eslint
+npm run verify:demo    # drive A1-A4 headlessly against the running chain
+```
+
+`npm run verify:demo` imports the interface's own `src/lib` modules and performs the four canonical actions
+through them against the running deterministic environment, checking the complete canonical history. It is a
+verification command for the frontend's code, not a second demonstration path, and it consumes the
+environment it runs against — restart Anvil and re-run the demo runner afterwards.
+
+`VITE_RPC_URL` overrides the RPC endpoint recorded in the manifest.
+
+`frontend/node_modules/`, `frontend/dist/`, `frontend/public/standby-demo.json` and `demo.env` are
+git-ignored. `frontend/package-lock.json` is committed.
