@@ -20,8 +20,8 @@ An AMM pool tells you what you can execute *now*. It tells you nothing about wha
 execute later.
 
 Executable capacity is directional and mutable: ordinary swaps and liquidity changes move it, and none of
-that activity is adversarial. So an institution that may need 50,000 USDC tomorrow — for a settlement it
-cannot be sure will happen — has no way to rely on the capacity it can see today.
+that activity is adversarial. So an institution that may need a specific quantity of USDC tomorrow — for a
+settlement it cannot be sure will happen — has no way to rely on the capacity it can see today.
 
 Its existing options all pay for certainty in advance:
 
@@ -34,6 +34,91 @@ ordinary traders value present access. Every participant is behaving rationally,
 availability nobody is responsible for is exactly the thing the beneficiary needs.
 
 That gap is a coordination failure, not misconduct — and it is what Standby is for.
+
+## Who Standby is for
+
+Standby is intended for actors who hold productive onchain assets and face a **bounded, contingent, future**
+requirement for a different asset — where the requirement may not materialize at all, and where unwinding
+or pre-funding in advance is the expensive part.
+
+Potential users include:
+
+- tokenized-asset issuers and asset managers;
+- institutional treasury and settlement operators;
+- permissioned onchain markets;
+- institutional holders of productive or yield-bearing onchain assets that may later require a bounded
+  quantity of another asset for settlement, redemption, collateral, or treasury operations.
+
+These are illustrative classes of actor for whom the primitive could be useful. No institution uses Standby
+today, none is presented here as a customer, and none has endorsed it.
+
+### An illustrative institutional example
+
+> An institution holds **$5 million** of tokenized Treasury assets. It may need **$500,000 USDC** tomorrow,
+> inside a defined settlement window — and it may not need it at all.
+
+Without Standby its choices are the ones above, applied to a real balance sheet: pre-position the USDC,
+arrange dedicated liquidity, lean on a counterparty — or accept uncertainty about whether the AMM capacity
+it can see today will still be there tomorrow.
+
+With Standby, a production deployment could instead let it acquire a **bounded future execution commitment**
+backed by qualifying shared AMM liquidity. The tokenized assets keep working, the USDC is not pre-positioned,
+and the capacity the institution is relying on cannot be drawn away by a transition that would leave the
+commitment unbacked.
+
+What that does and does not mean:
+
+- the committed USDC is **not** segregated, escrowed, or moved into Standby custody;
+- compatible ordinary use of the same shared liquidity continues while the commitment is outstanding;
+- Standby protects the admitted **capacity** boundary, not a price — exercise runs through actual AMM
+  execution, at whatever the pool gives at that moment, with ordinary price impact;
+- on successful exercise and fulfillment, the Beneficiary receives the protected output directly;
+- execution is conditional on the commitment's validity, exercise window, authority, eligibility and
+  service-domain conditions — it is not an unconditional guarantee.
+
+The **$5M / $500K** figures above are illustrative framing only. They are not the canonical demo fixture.
+The fixture that proves actual implemented behavior is the A1–A4 history further down, denominated in
+MockUSDC.
+
+### A commitment is bounded in quantity *and* in time
+
+Every commitment carries an exercise window — `exercisableFrom` and `validUntil` — and the two bounds do
+different economic work.
+
+- A valid commitment contributes to Aggregate Capacity Obligation **from admission**, before it is
+  exercisable. This is deliberate: the capacity has to already be protected by the time the exercise window
+  opens, or the promise would be worth nothing at the moment it matters.
+- Authorized exercise is possible only inside the window, `exercisableFrom <= t < validUntil`.
+- If exercise succeeds and fulfillment is causally proven, Remaining Entitlement and the corresponding
+  Capacity Obligation are reduced by exactly the fulfilled quantity.
+- Once `t >= validUntil`, the commitment stops contributing to Capacity Obligation.
+
+> **Expiry releases an obligation. Expiry is not fulfillment.**
+
+When a commitment reaches `validUntil`, any remaining unfulfilled entitlement ceases contributing to
+Capacity Obligation. Expiration does not represent that remaining entitlement as fulfilled, and implies no
+additional Beneficiary delivery. The practical consequence is that Standby protects a bounded quantity of
+future execution capacity for a bounded period, rather than imposing an open-ended constraint on shared
+liquidity.
+
+## Why Uniswap v4?
+
+> **A future execution commitment is credible only if it can be enforced where the resource backing the
+> commitment changes.**
+
+For Standby, that backing resource is executable AMM capacity — and swaps and liquidity actions are exactly
+what move it. A promise recorded beside the pool, in an external ledger, would still be a promise: nothing
+in that ledger stops the pool from transitioning into a state in which the promised capacity no longer
+exists. Enforcement has to sit at the transitions themselves.
+
+Uniswap v4 hooks provide that boundary. Standby evaluates each backing-affecting pool transition before it
+can become authoritative:
+
+- **compatible transition** → allowed;
+- **capacity-destroying transition** → rejected;
+- **authorized protected exercise** → recognized through the actual AMM execution path.
+
+> **The economic agreement is enforced where the backing state changes.**
 
 ## The core idea
 
@@ -53,6 +138,8 @@ conditions — derived from live Uniswap v4 state, not from a balance or a TVL n
 Standby currently owes across live commitments. The hook re-derives both on every backing-affecting
 transition and refuses any transition whose *prospective* state would break the relation.
 
+Equality is sufficient. Standby requires no reserve margin and no excess buffer beyond `S >= O`.
+
 ### "Protect capacity, not reserve liquidity"
 
 Reserving liquidity means taking it out of shared use so it is there later. It is certain, and it is
@@ -67,6 +154,58 @@ The demonstration below is built to make that difference observable: with a 50,0
 outstanding, an unrelated trader is *served* 15,000 of the same protected output, and then *refused* a
 20,000 request — not because the pool ran out, but because that one transition would have left 45,000 of
 capacity behind a 50,000 obligation.
+
+## Protocol economics
+
+> **Standby turns shared AMM liquidity into two potentially distinct economic services: immediate execution
+> and committed future availability.**
+
+**The capacity purchaser / Beneficiary** receives something economically valuable: a bounded commitment that
+qualifying future AMM execution capacity will remain available under the configured conditions, for a
+bounded period, without pre-positioning the destination asset.
+
+**Supporting liquidity** bears the corresponding cost. LPs continue participating in compatible AMM activity
+— that is the point of the non-reservation property — but while an obligation is live they give up
+unconstrained use of the capacity whose removal would leave an admitted commitment insufficiently backed.
+The constraint is quantity-bounded, time-bounded, and compatible with continued ordinary use.
+
+**Compensation is a production-path question, not an implemented one.** A production market would plausibly
+need to pay for the additional service, in something like the direction `capacity purchaser → capacity
+premium → supporting liquidity`, so that liquidity could earn from two services rather than one: ordinary
+swap fees for immediate execution, and capacity premiums for committed future availability. What such a
+premium should depend on — commitment quantity, duration, capacity utilization and scarcity, market
+conditions — is mechanism design that this repository does not attempt.
+
+The reference implementation therefore does **not** implement capacity pricing, LP premium distribution,
+capacity auctions, a utilization pricing curve, LP attribution economics, or a capacity marketplace.
+
+Two economic quantities also remain conceptually distinct and should not be conflated: payment for the
+future capacity *right*, and the actual input the exerciser must settle when exercise occurs. The reference
+implementation settles the second; the first is left to a production mechanism.
+
+## Permissioned institutional markets
+
+Standby's reference realization queries an external onchain `EligibilityRegistry` rather than owning
+membership administration as protocol economic state. The registry exposes logically distinct, independently
+mutable, fail-closed predicates for the relevant actor and action classes:
+
+- Beneficiary eligibility for the protected service;
+- trader eligibility for ordinary permissioned swaps;
+- liquidity-action eligibility.
+
+That separation matters for institutional and tokenized-asset markets, where who may hold, trade, or provide
+liquidity against an asset is governed externally and changes over time. Standby consumes that authority's
+answers; it does not become the authority.
+
+**The Standby reference implementation is not an integration with Uniswap Permissioned Pools.** No such
+integration exists here, and none is claimed.
+
+The two ideas are conceptually complementary rather than competing:
+
+> **Permissioning asks:** who may participate?
+>
+> **Standby asks:** given authorized participants, what future execution capacity may be promised, and which
+> subsequent uses of the shared liquidity remain compatible with that promise?
 
 ## The realization
 
@@ -267,6 +406,36 @@ transition, operates independently of validity, eligibility, authority and servi
 supports every token, integrates with or is endorsed by any tokenized-Treasury issuer, or is production-ready
 institutional settlement infrastructure. MockUSTB is a representative demo asset only.
 
+## Path to production
+
+> The reference implementation proves the protocol-enforced capacity primitive. It is not presented as
+> production-ready institutional settlement infrastructure.
+
+What separates the two is not further proof of the primitive but work that was deliberately out of scope:
+
+**Capacity economics.** Commitment pricing, LP attribution, LP compensation, premium distribution,
+duration/utilization/scarcity economics, and whatever capacity-market mechanism turns the primitive into a
+market. None of this is implemented here.
+
+**Production permissioning and asset integration.** An appropriate production compliance and authorization
+model, the set of supported production assets, token-transfer restrictions, institutional operational
+requirements, and — where appropriate — interoperability with permissioned infrastructure. No such
+integration exists today.
+
+**Production periphery and deployment.** Supported-chain infrastructure resolution, production
+PoolManager and periphery assumptions, production routers and settlement paths, configuration and deployment
+administration, real token behavior, and operational validation on a public chain. Deterministic local Anvil
+remains the canonical, accepted environment for this demonstration; public-testnet deployment is optional and
+off the critical path.
+
+**Security and operational hardening.** Independent audit, adversarial review, economic stress testing,
+dependency review, key and admin security, monitoring, incident response, and an upgrade/migration policy.
+The verification below is specification-driven engineering evidence, and that is a different thing.
+
+**Market validation.** Production viability also depends on questions this repository cannot answer:
+whether institutions will pay for protected future capacity, whether capacity premiums sufficiently
+compensate supporting liquidity, and whether supply and demand together produce a viable capacity market.
+
 ## Verification
 
 Standby is specification-first. The protocol's economic semantics, state model, invariants and verification
@@ -285,6 +454,23 @@ authoritative economic derivations are checked against independent reference rec
 against themselves, and the canonical acceptance suite constructs a complete system from an empty chain
 through the real deployment and bootstrap path before reproducing the A1–A4 history above — twice, on two
 independently constructed systems, to prove determinism.
+
+The accepted final evidence recorded for the demonstration:
+
+| Check                                 | Result                      |
+| ------------------------------------- | --------------------------- |
+| `forge fmt`                           | clean                       |
+| `forge build`                         | success                     |
+| `forge test`                          | 590 passed, 0 failed, 0 skipped |
+| `FOUNDRY_PROFILE=ci forge test`       | passed                      |
+| Frontend lint / build                 | clean                       |
+| Frontend deterministic verification   | 36 / 36                     |
+| Canonical demo in fresh environments  | reproduced                  |
+
+Coverage baseline for the Standby protocol core — the hook, the router, the registry and the three
+libraries: lines 99.42%, statements 98.52%, branches 92.31%, functions 100%.
+
+None of this constitutes a production security audit.
 
 ## Documentation
 
