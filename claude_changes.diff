@@ -1,0 +1,2112 @@
+diff --git a/README.md b/README.md
+index 7941e62..6b642fa 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,7 @@
++<p align="center">
++  <img src="assets/brand/standby-mark.png" alt="Standby" width="150" />
++</p>
++
+ # Standby
+ 
+ **Execution capacity when you need it.**
+diff --git a/assets/brand/README.md b/assets/brand/README.md
+new file mode 100644
+index 0000000..31177f9
+--- /dev/null
++++ b/assets/brand/README.md
+@@ -0,0 +1,61 @@
++# Standby Brand Assets
++
++Approved visual identity assets for Standby.
++
++## Identity
++
++```text
++Visual concept:
++    Protected Flow
++
++Visual personality:
++    Assured · Fluid · Precise
++
++Primary tagline:
++    Execution capacity when you need it.
++
++Technical descriptor:
++    Protocol-enforced future execution capacity from shared AMM liquidity.
++```
++
++## Palette direction
++
++```text
++Deep Blue
++Cyan
++Violet
++Dark navy ground
++Light primary text
++Muted secondary text
++```
++
++## Files
++
++```text
++standby-mark.png
++    approved ribbon-S project identity mark
++
++standby-title-reference.png
++    approved ETHOnline 2026 title-slide visual reference
++```
++
++## Asset status
++
++These are approved **raster presentation assets**.
++
++They are not canonical vector artwork and not final SVG geometry.
++
++## Mark interpretation
++
++The mark is a ribbon-form `S`. It must not be reinterpreted as:
++
++```text
++shield
++lock
++vault
++power / standby button
++coin
++custody / escrow
++dedicated reserve
++literal arrow
++```
+diff --git a/assets/brand/standby-mark.png b/assets/brand/standby-mark.png
+new file mode 100644
+index 0000000..bf876bd
+Binary files /dev/null and b/assets/brand/standby-mark.png differ
+diff --git a/assets/brand/standby-title-reference.png b/assets/brand/standby-title-reference.png
+new file mode 100644
+index 0000000..e7cb6c9
+Binary files /dev/null and b/assets/brand/standby-title-reference.png differ
+diff --git a/docs/prompts/retrospective/session-18-chatgpt-record.md b/docs/prompts/retrospective/session-18-chatgpt-record.md
+index e69de29..c6270cc 100644
+--- a/docs/prompts/retrospective/session-18-chatgpt-record.md
++++ b/docs/prompts/retrospective/session-18-chatgpt-record.md
+@@ -0,0 +1,1178 @@
++# Session 18 — ChatGPT Reasoning Record
++
++**Session:** 18
++**Scope:** Post-F10 README Institutional / Economic Framing
++**Artifact type:** Non-normative retrospective / reasoning record
++**Protocol status entering session:** F0–F10 COMPLETE; G10 CLOSED / PASS
++**Protocol status leaving session:** unchanged
++**Implementation scope:** documentation / repository presentation only
++**Optional F9T:** not begun; remains off the critical path
++
++---
++
++## 1. Purpose of This Record
++
++This document preserves the substantive user ↔ ChatGPT reasoning associated with Session 18.
++
++It is not a normative protocol artifact and does not redefine Standby's economics, architecture, specification, implementation, invariants, testing strategy, or accepted gate results.
++
++Its purpose is to preserve contemporaneous evidence for the later Protocol Discovery Methodology retrospective, including:
++
++- questions and concerns raised by the user;
++- ChatGPT derivations and recommendations;
++- presentation-boundary decisions;
++- institutional and economic framing decisions;
++- alternatives considered or rejected;
++- semantic distinctions that had to be preserved during presentation work;
++- review of Claude's actual README changes;
++- the semantic correction identified during independent review;
++- methodology observations arising from the session.
++
++---
++
++## 2. Session Context
++
++Session 18 began after completion of the full Standby implementation and verification roadmap.
++
++The implementation ladder through F10 had been completed and independently reviewed.
++
++The repository therefore entered this session with:
++
++```text
++F0–F10 COMPLETE
++
++G10 CLOSED / PASS
++
++required implementation blocker: none
++
++canonical deterministic Anvil demonstration: complete
++
++canonical A1–A4 acceptance history: complete
++
++590 tests passed
++
++frontend deterministic verification: 36 / 36
++
++protocol-core coverage:
++    lines       99.42%
++    statements  98.52%
++    branches    92.31%
++    functions   100%
++```
++
++The session was explicitly post-F10.
++
++Its objective was not to improve the protocol.
++
++Its objective was to improve the public explanation of the already-completed protocol without changing what the protocol meant.
++
++---
++
++## 3. Initial Presentation Problem
++
++The existing README accurately described Standby's mechanism and canonical demonstration, but the user identified that it remained too general in several areas important to an ETHGlobal judge or institutional reader.
++
++The user wanted the repository to answer questions such as:
++
++- Who actually benefits from Standby?
++- What kind of institution would want this?
++- What real operational problem does the primitive address?
++- Why would an institution choose future execution capacity rather than simply holding USDC?
++- How does Standby relate to permissioned institutional markets?
++- How was permissioning incorporated into the reference realization?
++- Why is Uniswap v4 specifically important?
++- Who pays for the capacity commitment?
++- Why would LPs accept the resulting constraint?
++- Is the constraint permanent?
++- What would still be required to turn the reference implementation into a production system?
++
++The central challenge became:
++
++> Improve the economic and institutional legibility of Standby without inventing economics, integrations, customers, guarantees, or production claims that the completed protocol does not support.
++
++This established a presentation-convergence problem rather than a protocol-design problem.
++
++---
++
++## 4. Institutional Actor Derivation
++
++The first derivation concerned who could plausibly benefit from the primitive.
++
++The existing canonical artifacts already contained the relevant economic scenario: an institution holds a productive or yield-bearing onchain asset but may later require a bounded amount of another asset for settlement.
++
++The README therefore did not need a new use case invented after implementation.
++
++Instead, existing protocol context could be surfaced more explicitly.
++
++The resulting actor classes were:
++
++1. tokenized-asset issuers and asset managers;
++2. institutional treasury and settlement operators;
++3. permissioned onchain markets;
++4. institutional holders of productive or yield-bearing onchain assets that may later require another asset for settlement, redemption, collateral, or treasury operations.
++
++A key boundary was established:
++
++> These are potential classes of users for the primitive, not claims of current adoption.
++
++The README therefore explicitly avoids representing any institution as a Standby customer or endorser.
++
++---
++
++## 5. Illustrative Institutional Scenario
++
++A concrete example was derived to make the economic problem legible.
++
++Illustrative scenario:
++
++```text
++institution holds:
++    $5 million tokenized Treasury assets
++
++possible future requirement:
++    $500,000 USDC
++
++time:
++    tomorrow / defined settlement window
++
++uncertainty:
++    settlement may not occur
++```
++
++Without Standby, the institution might:
++
++```text
++pre-position USDC
++arrange dedicated liquidity
++rely on a counterparty
++accept uncertainty about future AMM capacity
++```
++
++With a future production realization of Standby, the institution could instead acquire a bounded future execution commitment backed by qualifying shared AMM liquidity.
++
++The critical economic distinction was preserved:
++
++```text
++not:
++    reserve $500,000 USDC
++
++but:
++    protect $500,000 of qualifying future execution capacity
++```
++
++The example was explicitly classified as illustrative rather than implemented evidence.
++
++This was important because the canonical acceptance fixture remains:
++
++```text
++initial S        = 80,000 MockUSDC
++admitted O       = 50,000 MockUSDC
++compatible A2    = 15,000 MockUSDC
++rejected A3      = 20,000 MockUSDC
++prospective S'   = 45,000 MockUSDC
++post-A2 S        = 65,000 MockUSDC
++exercise         = 50,000 MockUSDC
++```
++
++During README editing, the earlier generic problem statement referring to an institution needing "50,000 USDC tomorrow" was generalized to "a specific quantity of USDC tomorrow."
++
++This prevented the illustrative narrative from accidentally sharing the same number as the canonical acceptance fixture and blurring the distinction between economic example and implementation evidence.
++
++---
++
++## 6. Time-Bounded Capacity Was Identified as an Important Missing Explanation
++
++The user raised an important economic question concerning duration.
++
++If LP capacity is constrained by an outstanding commitment, a reader could reasonably ask:
++
++> Is that constraint permanent if the Beneficiary never exercises?
++
++The implementation already answered this through:
++
++```text
++exercisableFrom
++validUntil
++```
++
++The session derived the economic interpretation of those fields.
++
++A commitment is bounded in:
++
++```text
++quantity
++and
++time
++```
++
++The important lifecycle distinction is:
++
++```text
++admission
++    → obligation begins immediately while commitment is valid
++
++before exercisableFrom
++    → capacity is already protected
++    → exercise is not yet authorized
++
++exercisableFrom <= t < validUntil
++    → authorized exercise may occur
++
++successful fulfillment
++    → fulfilled quantity reduces Remaining Entitlement and O
++
++t >= validUntil
++    → remaining unfulfilled entitlement ceases contributing to O
++```
++
++Protection beginning before exercisability is economically important.
++
++If protection began only when exercise became available, ordinary activity immediately before the exercise window could destroy the capacity the commitment was supposed to assure.
++
++The resulting framing was:
++
++> Standby protects a bounded quantity of future execution capacity for a bounded period.
++
++---
++
++## 7. Expiry and Fulfillment Must Remain Distinct
++
++A particularly important semantic distinction emerged during independent review.
++
++The required rule is:
++
++> Expiry releases an obligation. Expiry is not fulfillment.
++
++Claude's initial README implementation correctly preserved this callout but followed it with the statement that an expired commitment "was never exercised and the Beneficiary received nothing."
++
++ChatGPT identified this as too strong.
++
++A commitment can be partially fulfilled and subsequently expire with Remaining Entitlement still nonzero.
++
++Therefore:
++
++```text
++partial fulfillment
++    → some Beneficiary delivery occurred
++    → fulfilled quantity reduced Remaining Entitlement and O
++
++later expiration
++    → remaining unfulfilled entitlement ceases contributing to O
++    → prior fulfillment remains fulfillment
++    → expiration does not imply fulfillment of the remainder
++```
++
++The original sentence collapsed two behaviorally distinct histories:
++
++```text
++never exercised → expires
++
++partially exercised → remainder expires
++```
++
++A narrow correction was required.
++
++The corrected README states, in substance:
++
++> When a commitment reaches `validUntil`, any remaining unfulfilled entitlement ceases contributing to Capacity Obligation. Expiration does not represent that remaining entitlement as fulfilled and implies no additional Beneficiary delivery.
++
++No implementation change was required.
++
++No gate was reopened.
++
++This was a presentation-level semantic correction.
++
++---
++
++## 8. Why Uniswap v4?
++
++The session derived a clearer explanation for why Standby belongs at the AMM execution boundary rather than in an external commitment ledger.
++
++The reasoning was:
++
++```text
++future execution commitment
++    ↓
++must remain backed
++
++backing resource
++    ↓
++live executable AMM capacity
++
++what changes that capacity?
++    ↓
++swaps and liquidity transitions
++
++therefore
++    ↓
++the commitment must be enforced where those transitions occur
++```
++
++An external ledger could record a promise but could not independently prevent the AMM from transitioning into a state in which the promised capacity no longer existed.
++
++Uniswap v4 hooks provide an execution boundary at which Standby can distinguish:
++
++```text
++compatible transition
++    → allow
++
++capacity-destroying transition
++    → reject
++
++authorized protected exercise
++    → recognize through actual AMM execution
++```
++
++The resulting concise framing was:
++
++> **The economic agreement is enforced where the backing state changes.**
++
++This became one of the strongest README explanations of why Standby is specifically a Uniswap v4 protocol realization rather than merely an application using Uniswap liquidity.
++
++---
++
++## 9. Permissioned-Market Relationship
++
++The session also clarified Standby's relationship to permissioned institutional markets.
++
++External research into Uniswap's Permissioned Pools established that Uniswap v4 is being used to support tokenized and regulated assets with allowlisted participation and logically distinct permissions around swaps and liquidity.
++
++However, an important non-claim boundary was established:
++
++> The Standby reference implementation does not integrate Uniswap Permissioned Pools.
++
++Standby's implemented permissioning mechanism is its own external onchain:
++
++```text
++EligibilityRegistry
++```
++
++The registry exposes logically distinct predicates for:
++
++```text
++Beneficiary eligibility
++trader eligibility
++liquidity-action eligibility
++```
++
++Standby consumes those externally administered eligibility results rather than owning membership administration as protocol economic truth.
++
++The conceptual relationship was expressed as:
++
++```text
++Permissioning:
++    Who may participate?
++
++Standby:
++    Given authorized participants,
++    what future execution capacity may be promised,
++    and which subsequent uses of shared liquidity
++    remain compatible with that promise?
++```
++
++The two concepts are therefore potentially complementary without implying implementation integration.
++
++No external institution was named as a Standby customer or user.
++
++---
++
++## 10. Protocol Economics — The "Who Pays?" Question
++
++The user raised what became one of the most important economic questions in the session:
++
++> If LPs accept constraints on how supporting liquidity can be used while a commitment is outstanding, who compensates them?
++
++This question had intentionally not been solved by the hackathon implementation.
++
++The session therefore separated:
++
++```text
++the enforcement primitive
++from
++the future pricing / compensation mechanism
++```
++
++Three economic roles were identified.
++
++### Capacity purchaser / Beneficiary
++
++Receives something valuable:
++
++> a bounded right to qualifying future execution capacity without pre-positioning the destination asset.
++
++### Supporting liquidity
++
++Provides the economic resource backing the commitment.
++
++LP liquidity remains shared and compatible ordinary activity continues.
++
++However, LPs give up:
++
++> unconstrained use of supporting capacity whose removal would cause S < O.
++
++This wording was preferred over saying LPs "lose immediate use of their liquidity," because A2 proves that compatible ordinary use continues.
++
++### Protocol / capacity coordinator
++
++Admits commitments and enforces the backing relationship.
++
++---
++
++## 11. Capacity Premium Direction
++
++A plausible production economic direction was derived:
++
++```text
++capacity purchaser
++    ↓
++capacity premium
++    ↓
++supporting liquidity
++```
++
++This suggests two potentially distinct LP revenue services:
++
++```text
++ordinary AMM fees
++    → compensation for immediate execution
++
++capacity premiums
++    → compensation for committed future availability
++```
++
++This led to a broader economic interpretation:
++
++> Standby turns shared AMM liquidity into two potentially distinct economic services: immediate execution and committed future availability.
++
++However, the session explicitly rejected inventing a pricing mechanism.
++
++The reference implementation does not implement:
++
++```text
++capacity pricing
++LP premium distribution
++capacity auctions
++utilization pricing curves
++LP attribution economics
++capacity marketplace
++```
++
++Potential production pricing variables could include:
++
++```text
++commitment quantity
++duration
++capacity utilization
++scarcity
++market conditions
++```
++
++but these remain future mechanism-design questions.
++
++---
++
++## 12. Capacity Premium and Exercise Settlement Are Different Economic Quantities
++
++The session also distinguished two payments that could otherwise be confused.
++
++### Payment for capacity
++
++A future production mechanism might charge for the right to have future capacity protected.
++
++### Input settlement during exercise
++
++When actual exercise occurs, the exerciser must settle the actual AMM input required for execution.
++
++These are economically distinct:
++
++```text
++capacity premium
++    ≠
++exercise input settlement
++```
++
++The reference implementation implements the second.
++
++It does not implement the first.
++
++This distinction prevented the README from implying that existing exercise settlement already constituted compensation to LPs for accepting the Standby capacity constraint.
++
++---
++
++## 13. Path to Production
++
++The user asked whether the README should include what remains before Standby could become a production protocol.
++
++The decision was yes, but the section was deliberately named:
++
++> **Path to production**
++
++rather than:
++
++> Production readiness
++
++The distinction matters because the reference implementation proves the protocol primitive but is not production institutional infrastructure.
++
++Five production work areas were identified.
++
++### Capacity economics
++
++Including:
++
++```text
++commitment pricing
++LP attribution
++LP compensation
++premium distribution
++duration/utilization/scarcity economics
++capacity-market design
++```
++
++### Production permissioning and asset integration
++
++Including:
++
++```text
++production compliance model
++authorization model
++supported production assets
++token-transfer restrictions
++institutional operational requirements
++possible interoperability with permissioned infrastructure
++```
++
++No current integration is claimed.
++
++### Production periphery and deployment
++
++Including:
++
++```text
++supported-chain infrastructure
++production PoolManager/periphery assumptions
++production routers
++settlement paths
++deployment/configuration administration
++real token behavior
++public-chain operational validation
++```
++
++Deterministic local Anvil remains the canonical accepted environment for the hackathon demonstration.
++
++F9T remains optional.
++
++### Security and operational hardening
++
++Including:
++
++```text
++independent audit
++adversarial review
++economic stress testing
++dependency review
++admin/key security
++monitoring
++incident response
++upgrade/migration policy
++```
++
++### Market validation
++
++Including validation of whether:
++
++```text
++institutions will pay for future capacity
++capacity premiums adequately compensate supporting liquidity
++capacity supply and demand form a viable market
++```
++
++The key boundary was:
++
++> Strong testing and coverage demonstrate the behavior of the reference implementation. They do not establish production security, commercial viability, compliance readiness, or operational readiness.
++
++---
++
++## 14. README Editorial Architecture
++
++The final recommended README flow became:
++
++```text
++Standby identity
++    ↓
++The problem
++    ↓
++Who Standby is for
++    ↓
++illustrative institutional example
++    ↓
++bounded commitment lifecycle
++    ↓
++Why Uniswap v4?
++    ↓
++The core idea
++    ↓
++S >= O / non-reservation
++    ↓
++Protocol economics
++    ↓
++Permissioned institutional markets
++    ↓
++The realization
++    ↓
++How Standby Executes
++    ↓
++What the canonical demo proves
++    ↓
++Running the demo
++    ↓
++What Standby does not claim
++    ↓
++Path to production
++    ↓
++Verification
++    ↓
++Documentation
++```
++
++The two existing Mermaid diagrams were treated as frozen presentation artifacts and were not modified.
++
++The canonical A1–A4 acceptance story was also preserved.
++
++---
++
++## 15. Clean-Rule Review of the Claude Prompt
++
++Before Claude was invoked, the user explicitly checked whether the Session 18 prompt adhered to the established clean rule:
++
++> **CLAUDE.md owns permanent operating behavior.**
++
++> **.claude/rules/\* owns permanent Solidity/testing conventions.**
++
++> **Session prompts own only slice-specific objective, scope, requirements, prohibitions, file boundaries, gate evidence, and completion boundary.**
++
++The initial Session 18 prompt contained a Working Model section that restated some permanent ChatGPT/Claude operating behavior.
++
++Although substantively consistent, ChatGPT concluded that this was unnecessary duplication under the clean rule.
++
++The prompt was tightened so that the session prompt contained only the task-specific responsibility boundary and explicitly deferred permanent behavior to:
++
++```text
++CLAUDE.md
++.claude/rules/*
++```
++
++This produced a cleaner ownership model:
++
++```text
++permanent behavior
++    → CLAUDE.md
++
++permanent Solidity/testing conventions
++    → .claude/rules/*
++
++Session 18
++    → README-specific objective
++    → derived presentation requirements
++    → authorized files
++    → prohibitions
++    → verification
++    → completion boundary
++```
++
++---
++
++## 16. Session Naming and Branch Boundary
++
++Because this work occurred after F10 and was not a new implementation slice, the session was deliberately not named F11.
++
++Chosen session artifacts:
++
++```text
++docs/prompts/session-18-readme-presentation.md
++
++docs/prompts/session-18-log.md
++
++docs/prompts/retrospective/session-18-chatgpt-record.md
++```
++
++Chosen branch:
++
++```text
++docs/session-18-readme-institutional-framing
++```
++
++This naming communicates that the branch is documentation/presentation work rather than another protocol feature.
++
++---
++
++## 17. Pre-Implementation Working-Tree Issue
++
++Before Claude was prompted, the user discovered:
++
++```text
++frontend/.vite/
++```
++
++containing generated Vite metadata.
++
++Git showed:
++
++```text
++?? frontend/.vite/
++```
++
++and:
++
++```text
++git ls-files frontend/.vite
++```
++
++returned nothing.
++
++The files were therefore identified as untracked generated frontend cache artifacts rather than repository source.
++
++They were removed before Claude implementation began.
++
++This mattered because Session 18's file-boundary verification required the working tree to provide meaningful evidence about what Claude actually changed.
++
++The incident reinforced the value of establishing a clean working-tree baseline before bounded implementation or documentation sessions.
++
++---
++
++## 18. Claude Implementation Review
++
++Claude's implementation added the required README framing while preserving the existing accepted evidence.
++
++The substantive additions included:
++
++```text
++Who Standby is for
++
++illustrative institutional example
++
++bounded quantity/time lifecycle
++
++Why Uniswap v4?
++
++Protocol economics
++
++Permissioned institutional markets
++
++Path to production
++
++accepted verification evidence
++```
++
++Claude preserved:
++
++```text
++both frozen Mermaid diagrams
++
++canonical A1–A4 evidence
++
++realization table
++
++demo instructions
++
++non-claim boundaries
++
++documentation map
++```
++
++Claude also improved the precision of the coverage statement by identifying the reported percentages as the protocol-core aggregate rather than presenting them as unqualified repository-wide coverage.
++
++This was accepted as a useful presentation correction.
++
++---
++
++## 19. Independent Review Finding
++
++ChatGPT did not simply accept Claude's completion report.
++
++The actual README diff was independently reviewed.
++
++One semantic problem was found:
++
++```text
++"An expired commitment was never exercised
++and the Beneficiary received nothing."
++```
++
++The problem was not stylistic.
++
++It erased the valid history:
++
++```text
++partial fulfillment
++    ↓
++remaining entitlement
++    ↓
++expiration
++```
++
++A narrow correction prompt was therefore issued.
++
++Claude changed only the affected paragraph and recorded the follow-up in the Session 18 log.
++
++The corrected semantics became:
++
++```text
++successful fulfillment
++    → fulfilled quantity reduces Remaining Entitlement and O
++    → attributable Beneficiary delivery occurred
++
++expiration
++    → remaining unfulfilled entitlement ceases contributing to O
++    → expiration is not fulfillment
++    → no additional Beneficiary delivery is implied
++```
++
++This correction was independently reviewed and accepted.
++
++---
++
++## 20. Verification Evidence
++
++The documentation-only verification included:
++
++```text
++git diff --check
++    → clean
++
++Mermaid comparison
++    → 2 blocks
++    → both byte-identical to HEAD
++
++relative README links
++    → all resolved
++
++canonical fixture quantities
++    → preserved
++
++forge test --list
++    → 590 test functions
++```
++
++The full protocol suite was intentionally not rerun because Session 18 did not modify implementation or tests.
++
++Accepted F10 evidence remained the source for the existing verification results.
++
++No new gate evidence was sought.
++
++---
++
++## 21. Final Session Assessment
++
++Final assessment:
++
++```text
++Session 18 README presentation: COMPLETE
++
++F10: COMPLETE
++
++G10: CLOSED / PASS
++
++protocol semantics: unchanged
++
++production implementation: unchanged
++
++canonical demo: unchanged
++
++project-status.md: unchanged
++
++F9T: OPTIONAL / OFF CRITICAL PATH / NOT BEGUN
++```
++
++No protocol gate was opened or closed during Session 18.
++
++The work was a bounded presentation improvement over an already accepted implementation.
++
++---
++
++## 22. Methodology Observation — Presentation Is a Semantic Projection
++
++Session 18 exposed a useful methodology lesson.
++
++Once a protocol is complete, public explanation is not merely cosmetic.
++
++A README is a projection of the underlying semantic model into a lower-bandwidth representation intended for a different audience.
++
++That projection can introduce semantic errors even when the implementation is correct.
++
++The expiry sentence demonstrated this directly.
++
++The protocol correctly distinguished:
++
++```text
++fulfillment
++from
++expiration
++```
++
++but an apparently reasonable explanatory sentence collapsed the distinction.
++
++Therefore:
++
++> **Presentation artifacts should be reviewed for semantic preservation, not merely readability.**
++
++A useful future methodology formulation may be:
++
++```text
++Canonical Semantics
++        ↓
++Audience Projection
++        ↓
++Semantic Preservation Review
++        ↓
++Public Artifact
++```
++
++The public artifact need not contain every canonical distinction.
++
++But every distinction it does express must remain compatible with the canonical model.
++
++---
++
++## 23. Methodology Observation — Economic Completeness and Implementation Scope Are Different
++
++The "Who pays?" discussion produced another important observation.
++
++A protocol implementation can deliberately omit a market mechanism while still needing to acknowledge the economic role that mechanism would eventually serve.
++
++Standby proves:
++
++```text
++capacity admission
++backing enforcement
++compatible shared use
++protected exercise
++causal fulfillment
++```
++
++It does not prove:
++
++```text
++capacity pricing
++LP compensation
++market clearing
++commercial demand
++```
++
++The absence of those mechanisms does not invalidate the enforcement primitive.
++
++But failing to identify them publicly could make the protocol appear economically incomplete through oversight rather than intentionally scoped.
++
++Therefore a useful distinction is:
++
++```text
++economic question recognized
++    ≠
++economic mechanism implemented
++```
++
++Explicitly marking the boundary strengthens rather than weakens the protocol presentation.
++
++---
++
++## 24. Methodology Observation — Boundedness Improves Economic Legibility
++
++The time-bound discussion showed that implementation fields such as:
++
++```text
++exercisableFrom
++validUntil
++```
++
++are not merely technical lifecycle metadata.
++
++They materially change the economic character of the commitment.
++
++Without explicit duration, an LP-facing constraint could appear indefinite.
++
++Once duration is surfaced, the product becomes more naturally understandable as:
++
++> a bounded quantity of protected future execution capacity for a bounded period.
++
++This also provides a natural input to future pricing:
++
++```text
++capacity quantity
++×
++protection duration
++×
++utilization/scarcity conditions
++```
++
++Thus temporal semantics should be considered part of the economic explanation of a commitment mechanism, not merely implementation detail.
++
++---
++
++## 25. Methodology Observation — Enforcement Placement Is Part of Protocol Explanation
++
++The derivation of "Why Uniswap v4?" also yielded a reusable design principle.
++
++If a protocol promises some property backed by mutable shared state, the enforcement mechanism should generally sit at the authoritative transition boundary for that backing state.
++
++For Standby:
++
++```text
++promise:
++    future executable capacity
++
++backing:
++    AMM state
++
++backing-changing transitions:
++    swaps / liquidity actions
++
++enforcement boundary:
++    Uniswap v4 hook
++```
++
++Hence:
++
++> **The economic agreement is enforced where the backing state changes.**
++
++This is both an architectural principle and an explanatory tool.
++
++It connects the economic agreement directly to component placement.
++
++---
++
++## 26. Methodology Observation — Independent Review Still Matters After Implementation Ends
++
++Session 18 also demonstrated that independent review remains valuable after production code is complete.
++
++Claude's first README implementation was strong, internally reasoned, and accompanied by verification evidence.
++
++Nevertheless, independent review found a genuine behavioral-distinction error.
++
++The correction required no code change, but leaving it in the public README would have inaccurately described the protocol.
++
++This reinforces the established workflow:
++
++```text
++derivation
++    ↓
++bounded implementation
++    ↓
++implementer evidence
++    ↓
++independent review
++    ↓
++correction if required
++    ↓
++acceptance
++```
++
++The workflow applies to presentation artifacts as well as Solidity.
++
++---
++
++## 27. Methodology Observation — Clean Working State Is Part of Evidence Quality
++
++The untracked `.vite` cache incident also produced a smaller but practical observation.
++
++A bounded-session assertion such as:
++
++```text
++only README.md modified
++```
++
++is meaningful only if the working tree is understood before the task begins.
++
++Therefore the session baseline should distinguish:
++
++```text
++pre-existing working-tree artifacts
++from
++task-created changes
++```
++
++Generated tool caches should either be ignored or removed before implementation evidence is collected.
++
++This improves attribution of repository changes and makes completion-boundary verification stronger.
++
++---
++
++## 28. Session 18 Completion Boundary
++
++The Session 18 completion boundary is:
++
++```text
++current README inspected
++
++institutional audience framing integrated
++
++illustrative institutional use case integrated
++
++time-bounded commitment lifecycle explained
++
++Why Uniswap v4 rationale integrated
++
++protocol economics boundary integrated
++
++permissioned-market relationship integrated
++
++Path to Production integrated
++
++existing non-claim boundaries preserved
++
++canonical A1–A4 evidence preserved
++
++both frozen Mermaid diagrams preserved unchanged
++
++README reviewed end-to-end for semantic consistency
++
++README reviewed for economic and permissioning overclaiming
++
++expiry / partial-fulfillment semantic correction completed
++
++relative documentation links checked
++
++documentation verification complete
++
++independent review complete
++
++Session 18 presentation assessment PASS
++
++retrospective reasoning record produced
++```
++
++Session 18 stops at this boundary.
++
++It does not begin F9T.
++
++It does not reopen F10.
++
++It does not alter G10.
++
++It does not authorize another implementation task.
++
++---
++
++## 29. Final Retrospective Summary
++
++Session 18 began as a repository-presentation improvement and exposed several economically important dimensions of Standby that were already latent in the canonical design:
++
++```text
++who receives the service
++why future capacity is valuable
++why LPs bear an economic constraint
++why that constraint is bounded
++why a capacity premium is economically plausible
++why pricing remains a separate mechanism-design problem
++why permissioning and capacity assurance are distinct
++why Uniswap v4 is the correct enforcement boundary
++what remains between the reference implementation and production
++```
++
++The session also demonstrated that protocol semantics can be accidentally weakened during explanation even after implementation is complete.
++
++The independent correction of the expiry paragraph is therefore significant beyond the README itself.
++
++The resulting process lesson is:
++
++> A completed protocol should not move directly from implementation correctness to public presentation. Public artifacts should be treated as semantic projections of the canonical design and independently reviewed for preservation of behavioral distinctions, economic boundaries, evidence classes, and non-claims.
++
++Session 18 therefore provides useful evidence that the same responsibility and convergence discipline used during implementation remains valuable during protocol communication and submission closure.
+diff --git a/docs/prompts/session-19-add-logo.md b/docs/prompts/session-19-add-logo.md
+new file mode 100644
+index 0000000..919ae3d
+--- /dev/null
++++ b/docs/prompts/session-19-add-logo.md
+@@ -0,0 +1,521 @@
++# Session 18 — Repository Branding Integration
++
++You are working in the Standby repository.
++
++This is a **bounded presentation/branding integration task** after F10 and after the README presentation work has already been completed, independently reviewed, committed, and merged.
++
++The protocol implementation is complete.
++
++Do not reopen protocol semantics, README narrative, accepted verification evidence, frozen diagrams, or any completed implementation gate.
++
++---
++
++# 1. Objective
++
++Integrate the approved Standby visual identity into the live repository with the **minimum possible repository change**.
++
++The approved visual direction is already decided.
++
++Your task is implementation only.
++
++Do not redesign the logo, change messaging, rewrite README content, or introduce additional branding concepts.
++
++---
++
++# 2. Permanent Repository Instruction Ownership
++
++Preserve the established clean rule:
++
++> **CLAUDE.md owns permanent operating behavior.**
++>
++> **.claude/rules/\* owns permanent Solidity/testing conventions.**
++>
++> **Session prompts own only slice-specific objective, scope, requirements, prohibitions, file boundaries, gate evidence, and completion boundary.**
++
++Do not modify `CLAUDE.md` or `.claude/rules/*` for this task.
++
++---
++
++# 3. Approved Public Identity
++
++Project:
++
++**Standby**
++
++Tagline:
++
++> **Execution capacity when you need it.**
++
++Technical descriptor:
++
++> **Protocol-enforced future execution capacity from shared AMM liquidity.**
++
++Judge-facing synthesis:
++
++> **Standby doesn't reserve liquidity. It protects capacity.**
++
++Approved visual personality:
++
++```text
++ASSURED · FLUID · PRECISE
++```
++
++Approved palette direction:
++
++```text
++Deep Blue
++Cyan
++Violet
++Dark navy background
++Light primary text
++Muted secondary text
++```
++
++Approved mark:
++
++- ribbon-style `S`;
++- blue / cyan / violet treatment;
++- conventional/readable `STANDBY` wordmark;
++- complete conventional `A`;
++- no shield;
++- no lock;
++- no vault;
++- no custody/reserve motif;
++- no power-button motif.
++
++The design work is already complete for this task.
++
++Do not regenerate, redraw, reinterpret, or redesign the mark.
++
++---
++
++# 4. Files I Will Provide
++
++I will provide the approved branding assets separately.
++
++Use the provided approved files exactly.
++
++Expected assets:
++
++```text
++standby-mark.png
++standby-title-reference.png
++```
++
++The exact file names may be preserved unless there is a strong repository hygiene reason to normalize them.
++
++Do not manufacture replacement assets.
++
++---
++
++# 5. Repository Changes Authorized
++
++Create:
++
++```text
++assets/
++└── brand/
++    ├── standby-mark.png
++    ├── standby-title-reference.png
++    └── README.md
++```
++
++If `assets/` does not currently exist, create it.
++
++Do not create additional branding directories unless necessary.
++
++Do not add generated intermediate artifacts.
++
++Do not add a branding-session note at repository root.
++
++---
++
++# 6. assets/brand/README.md
++
++Create a short documentation file for the brand assets.
++
++It should identify:
++
++```text
++Standby visual concept:
++    Protected Flow
++
++Visual personality:
++    Assured · Fluid · Precise
++
++Primary tagline:
++    Execution capacity when you need it.
++
++Technical descriptor:
++    Protocol-enforced future execution capacity from shared AMM liquidity.
++```
++
++Document the intended palette direction:
++
++```text
++Deep Blue
++Cyan
++Violet
++Dark navy ground
++Light primary text
++Muted secondary text
++```
++
++Explain the files:
++
++```text
++standby-mark.png
++    approved ribbon-S project identity mark
++
++standby-title-reference.png
++    approved ETHOnline 2026 title-slide visual reference
++```
++
++Important:
++
++These are approved **raster presentation assets**.
++
++Do not claim they are canonical vector artwork or final SVG geometry.
++
++Also record that the mark should not be reinterpreted as:
++
++```text
++shield
++lock
++vault
++power / standby button
++coin
++custody / escrow
++dedicated reserve
++literal arrow
++```
++
++Keep this file concise.
++
++---
++
++# 7. README Integration
++
++The current root README presentation work is already accepted.
++
++Make **one branding addition only**.
++
++Insert the Standby mark above the existing:
++
++```md
++# Standby
++```
++
++using centered HTML similar to:
++
++```html
++<p align="center">
++  <img src="assets/brand/standby-mark.png" alt="Standby" width="150" />
++</p>
++```
++
++You may make a very small adjustment to `width` only if required for reasonable GitHub rendering.
++
++Do not add another title.
++
++Do not add another tagline.
++
++Do not add another descriptor.
++
++The existing README already contains those.
++
++---
++
++# 8. README Preservation Boundary
++
++Do not modify any existing README prose except for the minimal logo insertion.
++
++In particular, preserve:
++
++```text
++# Standby
++
++Execution capacity when you need it.
++
++Protocol-enforced future execution capacity from shared AMM liquidity.
++
++Standby doesn't reserve liquidity. It protects capacity.
++```
++
++Preserve all existing sections, including:
++
++```text
++The problem
++Who Standby is for
++institutional example
++time-bounded commitment semantics
++Why Uniswap v4?
++The core idea
++Protocol economics
++Permissioned institutional markets
++The realization
++How Standby Executes
++What the canonical demo proves
++Running the demo
++What Standby does not claim
++Path to production
++Verification
++Documentation
++```
++
++Do not rewrite, reorder, shorten, expand, or stylistically edit those sections.
++
++---
++
++# 9. Frozen README Diagrams
++
++The root README contains two previously accepted Mermaid diagrams:
++
++```text
++How Standby Executes
++What the canonical demo proves
++```
++
++Do not modify them.
++
++Do not reformat them.
++
++Do not change labels, structure, arrows, participants, quantities, styling, or Mermaid directives.
++
++They must remain byte-identical unless line-ending normalization occurs automatically and unavoidably.
++
++If Git reports a change to either Mermaid block, investigate before proceeding.
++
++---
++
++# 10. Verification Evidence Preservation
++
++Do not alter accepted evidence currently recorded in the README, including:
++
++```text
++590 passed
++0 failed
++0 skipped
++
++FOUNDRY_PROFILE=ci forge test
++    passed
++
++frontend deterministic verification
++    36 / 36
++
++canonical demo
++    reproduced
++
++coverage:
++    lines       99.42%
++    statements  98.52%
++    branches    92.31%
++    functions   100%
++```
++
++Do not rerun tests merely because branding assets were added.
++
++This is a non-executable change.
++
++---
++
++# 11. Presentation Deck Boundary
++
++Do not add the PowerPoint presentation to the repository in this task.
++
++The current approved deck remains an external rehearsal / submission artifact.
++
++Do not create:
++
++```text
++docs/presentation/
++slides/
++presentation/
++```
++
++unless explicitly authorized later.
++
++---
++
++# 12. Production-Code Boundary
++
++Do not modify:
++
++```text
++src/
++test/
++script/
++frontend/
++lib/
++foundry.toml
++package files
++deployment files
++demo fixture files
++docs/project-status.md
++canonical protocol specification artifacts
++```
++
++This task is branding-only.
++
++---
++
++# 13. Required Review
++
++After making the changes:
++
++1. inspect `git status --short`;
++2. inspect the full diff;
++3. confirm that only the expected branding files and README logo insertion changed;
++4. confirm no existing README prose changed;
++5. confirm both frozen Mermaid diagrams remain unchanged;
++6. confirm no executable files changed;
++7. confirm no tests were required or run.
++
++If any unrelated repository change is already present, do not modify or delete it. Report it separately.
++
++---
++
++# 14. Required Output
++
++Provide a concise completion report containing:
++
++## Files added
++
++Expected:
++
++```text
++assets/brand/standby-mark.png
++assets/brand/standby-title-reference.png
++assets/brand/README.md
++```
++
++## File modified
++
++Expected:
++
++```text
++README.md
++```
++
++## README change
++
++State exactly where the mark was inserted.
++
++## Preservation check
++
++Confirm:
++
++```text
++existing README prose unchanged
++frozen Mermaid diagrams unchanged
++verification evidence unchanged
++protocol semantics unchanged
++production code unchanged
++frontend unchanged
++project-status unchanged
++```
++
++## Verification
++
++State that this is a non-executable branding change and that no test rerun was required.
++
++## Diff summary
++
++Include the final `git diff --stat`.
++
++---
++
++# 15. Session Evidence / Post-Project Retrospective
++
++Preserve the Claude implementation record for this session as:
++
++`docs/prompts/session-19-log.md`
++
++This is the contemporaneous implementation log for the Session 19 repository branding integration.
++
++Record, where materially relevant:
++
++- the initial repository state relevant to this task;
++- the branding assets provided for integration;
++- files created and modified;
++- the exact README branding change;
++- confirmation that existing README prose was preserved;
++- confirmation that the frozen Mermaid diagrams were preserved;
++- confirmation that accepted verification evidence was preserved;
++- confirmation that no protocol, production-code, frontend, or project-status changes were made;
++- any issue encountered while integrating the supplied assets;
++- any implementation judgment required by the prompt;
++- final `git status --short`;
++- final `git diff --stat`;
++- completion-boundary evidence.
++
++Keep the log factual and contemporaneous.
++
++Do not use the log to introduce new protocol semantics, branding decisions, README narrative, or permanent operating instructions.
++
++The log is **non-normative implementation evidence**.
++
++Update the log before producing the final completion report.
++
++## Final Completion Report
++
++At the end of `docs/prompts/session-19-log.md`, include the final completion report for this session.
++
++The report must contain:
++
++- files added;
++- files modified;
++- exact README branding change;
++- preservation checks;
++- confirmation that the supplied approved assets were used without redesign;
++- confirmation that no executable or protocol files changed;
++- confirmation that no tests were required or run;
++- final `git status --short`;
++- final `git diff --stat`;
++- completion-boundary determination.
++
++The final completion report written to the log must be the authoritative session completion report.
++
++After updating the log, provide the same completion result in the Claude response so it can be independently reviewed by ChatGPT.
++
++---
++
++# 16. Completion Boundary
++
++The repository branding integration completion boundary is:
++
++```text
++approved brand assets added under assets/brand/
++
++assets/brand/README.md added
++
++Standby mark inserted above existing README title
++
++no existing README prose changed
++
++frozen Mermaid diagrams unchanged
++
++verification evidence unchanged
++
++no executable files changed
++
++session-19-log.md updated with contemporaneous implementation evidence
++
++final completion report recorded in session-19-log.md
++
++git diff reviewed
++
++completion report returned for independent review
++```
++
++Stop at this boundary.
++
++Do not commit.
++
++Do not open a PR.
++
++Do not modify project status.
++
++Do not begin presentation rehearsal work.
++
++Do not begin F9T.
+diff --git a/docs/prompts/session-19-log.md b/docs/prompts/session-19-log.md
+new file mode 100644
+index 0000000..b46ba21
+--- /dev/null
++++ b/docs/prompts/session-19-log.md
+@@ -0,0 +1,309 @@
++# Session 19 — Repository Branding Integration — Implementation Log
++
++Claude implementation chronology for the Session 19 repository branding integration task, initiated from
++`docs/prompts/session-19-add-logo.md`. Audit artifact only; it defines no protocol semantics, no branding
++decisions, no README narrative, and no permanent operating instructions. It closes no gate and changes no
++project status.
++
++---
++
++## Repository state entering Session 19
++
++Branch: `main`.
++
++Working tree clean except the untracked session prompt `docs/prompts/session-19-add-logo.md`.
++
++Last commit: `e020c40 docs: strengthen Standby institutional and economic framing (#20)`.
++
++`docs/project-status.md` records F0–F10 complete with every gate closed; the session prompt confirms the
++protocol implementation is complete and forbids reopening protocol semantics, README narrative, accepted
++verification evidence, frozen diagrams, or any completed gate.
++
++No `assets/` directory existed in the repository before this session.
++
++Authorized repository changes for this session: `assets/brand/` (two supplied assets plus a short README)
++and a single centered logo insertion at the top of the root `README.md`.
++
++---
++
++## Scope-boundary note recorded before editing
++
++Session prompt §12 lists `docs/project-status.md` and the canonical protocol specification artifacts among
++the files not to modify. `CLAUDE.md` (Session Prompt Discipline — Material Prompt Logging) permanently
++requires `docs/prompts/session-NN-log.md` to exist for a version-controlled session, and session prompt §15
++explicitly directs that this log be preserved as `docs/prompts/session-19-log.md`.
++
++Resolution: this log file is created under `docs/prompts/`. No other file under `docs/` is touched, and
++`docs/project-status.md` is not updated.
++
++Naming note: the supplied prompt file is `docs/prompts/session-19-add-logo.md` and its heading reads
++"Session 18 — Repository Branding Integration", while §15 of that same prompt directs the log to
++`docs/prompts/session-19-log.md`. `docs/prompts/session-18-log.md` already exists for the completed README
++presentation session. The prompt's explicit file-path instruction was followed; the existing Session 18 log
++was not touched.
++
++---
++
++## Branding assets provided for integration
++
++The approved assets were supplied outside the repository at:
++
++```text
++/Users/gkocsis/Downloads/standby-repository-branding/assets/brand/standby-mark.png
++/Users/gkocsis/Downloads/standby-repository-branding/assets/brand/standby-title-reference.png
++```
++
++Inspected before use:
++
++| File                          | Format                     | Dimensions  |
++| ----------------------------- | -------------------------- | ----------- |
++| `standby-mark.png`            | PNG, 8-bit/color RGBA      | 329 × 365   |
++| `standby-title-reference.png` | PNG, 8-bit/color RGB       | 1672 × 941  |
++
++Visual inspection confirmed the assets match the approved direction recorded in session prompt §3:
++ribbon-style `S`, blue / cyan / violet treatment, dark navy ground on the title reference, conventional
++readable `STANDBY` wordmark with a complete conventional `A`, and no shield, lock, vault, custody/reserve,
++or power-button motif. The mark has a transparent background, so it renders on both GitHub light and dark
++themes.
++
++The assets were copied into the repository unmodified. Byte identity with the supplied source was verified
++by SHA-256:
++
++```text
++1c2be71e053980503511ca9485cd26ae94ed10152aad940938f44cdadbecdba1  standby-mark.png
++c70a8ce795ce59d1050fb348b1fd716d15842c2ca5934dbe513c530ff5173c0d  standby-title-reference.png
++```
++
++Both hashes match the files under `/Users/gkocsis/Downloads/standby-repository-branding/assets/brand/`.
++No asset was regenerated, redrawn, reinterpreted, resized, recompressed, or renamed. The supplied file names
++were preserved; no repository-hygiene reason to normalize them was found.
++
++`git check-ignore` confirmed no `.gitignore` rule excludes the new asset paths.
++
++---
++
++## Issue encountered while integrating the supplied assets
++
++Directory listing of `/Users/gkocsis/Downloads/...` was refused by the local sandbox (`ls: Operation not
++permitted`). File reads and the copy itself succeeded, and byte identity was confirmed by hash afterward,
++so the refusal affected inspection convenience only and had no effect on the integrated content.
++
++---
++
++## Implementation judgment required by the prompt
++
++1. **Logo width.** Session prompt §7 supplies `width="150"` and permits a very small adjustment only if
++   required for reasonable GitHub rendering. The supplied mark is 329 × 365 (taller than wide); at
++   `width="150"` it renders about 166 px tall, which is a reasonable README header size. No adjustment was
++   made — the width remained exactly `150`.
++
++2. **Asset file names.** Preserved exactly as supplied, per §4.
++
++No other judgment was required.
++
++---
++
++## Files created and modified
++
++Created:
++
++```text
++assets/brand/standby-mark.png
++assets/brand/standby-title-reference.png
++assets/brand/README.md
++docs/prompts/session-19-log.md
++```
++
++Modified:
++
++```text
++README.md
++```
++
++`assets/brand/README.md` records the visual concept, visual personality, tagline, technical descriptor,
++palette direction, per-file description, the explicit statement that these are approved raster presentation
++assets rather than canonical vector artwork or final SVG geometry, and the list of motifs the mark must not
++be reinterpreted as. It introduces no new branding concept beyond what session prompt §6 specifies.
++
++---
++
++## Exact README branding change
++
++One insertion at the top of `README.md`, immediately above the existing `# Standby` heading:
++
++```html
++<p align="center">
++  <img src="assets/brand/standby-mark.png" alt="Standby" width="150" />
++</p>
++```
++
++followed by a single blank line before `# Standby`.
++
++No other line of `README.md` was added, removed, reordered, or edited.
++
++---
++
++## Preservation confirmations
++
++- **Existing README prose unchanged.** The diff for `README.md` is a pure insertion of the four lines above
++  at the head of the file; every pre-existing line is untouched.
++- **Title block preserved.** `# Standby`, `**Execution capacity when you need it.**`, the technical
++  descriptor line, and `> **Standby doesn't reserve liquidity. It protects capacity.**` are unchanged, and
++  no additional title, tagline, or descriptor was added.
++- **All existing sections preserved.** The problem; Who Standby is for; the institutional example;
++  time-bounded commitment semantics; Why Uniswap v4?; The core idea; Protocol economics; Permissioned
++  institutional markets; The realization; How Standby Executes; What the canonical demo proves; Running the
++  demo; What Standby does not claim; Path to production; Verification; Documentation — all unchanged.
++- **Frozen Mermaid diagrams unchanged.** Both accepted diagrams ("How Standby Executes" and "What the
++  canonical demo proves") are byte-identical; verified by extracting both fenced blocks from `HEAD:README.md`
++  and from the working tree and comparing them.
++- **Verification evidence unchanged.** The recorded evidence (590 passed / 0 failed / 0 skipped,
++  `FOUNDRY_PROFILE=ci forge test` passed, frontend deterministic verification 36 / 36, canonical demo
++  reproduced, coverage lines 99.42% / statements 98.52% / branches 92.31% / functions 100%) is untouched.
++- **Protocol semantics unchanged.** No canonical specification artifact was read for modification or edited.
++- **Production code unchanged.** No change under `src/`, `test/`, `script/`, `lib/`, no change to
++  `foundry.toml`, package files, deployment files, or demo fixture files.
++- **Frontend unchanged.** No change under `frontend/`.
++- **project-status unchanged.** `docs/project-status.md` was not modified.
++- **CLAUDE.md and .claude/rules/\* unchanged**, per session prompt §2.
++- **No presentation deck added.** No `docs/presentation/`, `slides/`, or `presentation/` directory created,
++  per session prompt §11.
++
++---
++
++## Verification
++
++This is a non-executable branding change: two raster assets, one new documentation file, one new log file,
++and a four-line HTML insertion in `README.md`. No Solidity, TypeScript, configuration, or fixture file was
++touched, so no test rerun was required and none was run. Accepted verification evidence was neither rerun
++nor altered.
++
++---
++
++## Unrelated repository state present
++
++The untracked session prompt `docs/prompts/session-19-add-logo.md` was already present when the session
++started. It was not modified or deleted.
++
++---
++
++## Final `git status --short`
++
++```text
++ M README.md
++?? assets/
++?? docs/prompts/session-19-add-logo.md
++?? docs/prompts/session-19-log.md
++```
++
++## Final `git diff --stat`
++
++```text
++ README.md | 4 ++++
++ 1 file changed, 4 insertions(+)
++```
++
++(`git diff --stat` reports tracked modifications only; the new `assets/brand/` files and the two
++`docs/prompts/` files are untracked additions listed above.)
++
++---
++
++# Final Completion Report — Session 19
++
++## Files added
++
++```text
++assets/brand/standby-mark.png
++assets/brand/standby-title-reference.png
++assets/brand/README.md
++docs/prompts/session-19-log.md
++```
++
++## Files modified
++
++```text
++README.md
++```
++
++## Exact README branding change
++
++Inserted at the very top of `README.md`, immediately above the existing `# Standby` heading:
++
++```html
++<p align="center">
++  <img src="assets/brand/standby-mark.png" alt="Standby" width="150" />
++</p>
++```
++
++Width remained exactly `150`; no adjustment was needed. Nothing else in `README.md` changed.
++
++## Preservation checks
++
++```text
++existing README prose unchanged        confirmed
++frozen Mermaid diagrams unchanged      confirmed (byte-identical vs HEAD)
++verification evidence unchanged        confirmed
++protocol semantics unchanged           confirmed
++production code unchanged              confirmed
++frontend unchanged                     confirmed
++project-status unchanged               confirmed
++CLAUDE.md / .claude/rules unchanged    confirmed
++```
++
++## Approved assets used without redesign
++
++Both supplied assets were copied into `assets/brand/` unmodified, with original file names preserved, and
++byte identity with the supplied files was verified by SHA-256. No mark was regenerated, redrawn,
++reinterpreted, or redesigned, and no replacement asset was manufactured.
++
++## Executable / protocol files
++
++No executable or protocol file changed. No change under `src/`, `test/`, `script/`, `frontend/`, `lib/`, and
++no change to `foundry.toml`, package files, deployment files, or demo fixture files.
++
++## Tests
++
++No test was required and no test was run. This is a non-executable branding change; accepted verification
++evidence was preserved unchanged.
++
++## Final `git status --short`
++
++```text
++ M README.md
++?? assets/
++?? docs/prompts/session-19-add-logo.md
++?? docs/prompts/session-19-log.md
++```
++
++## Final `git diff --stat`
++
++```text
++ README.md | 4 ++++
++ 1 file changed, 4 insertions(+)
++```
++
++## Completion-boundary determination
++
++The Session 19 completion boundary defined in session prompt §16 is met:
++
++- approved brand assets added under `assets/brand/`;
++- `assets/brand/README.md` added;
++- Standby mark inserted above the existing README title;
++- no existing README prose changed;
++- frozen Mermaid diagrams unchanged;
++- verification evidence unchanged;
++- no executable files changed;
++- `docs/prompts/session-19-log.md` updated with contemporaneous implementation evidence;
++- final completion report recorded in this log;
++- `git diff` reviewed;
++- completion report returned for independent review.
++
++Stopped at the boundary: no commit, no PR, no project-status modification, no presentation rehearsal work,
++no F9T work.
++
++## Prompt Audit
++
++Material follow-up instructions recorded in this log: **0**. The session was executed from the initiating
++prompt `docs/prompts/session-19-add-logo.md` with no material follow-up instruction; the only additional
++user input supplied the file paths of the two approved branding assets, which the prompt had already
++announced would be provided separately.
