@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/standby-mark.png" alt="Standby" width="150" />
+</p>
+
 # Standby
 
 **Execution capacity when you need it.**
