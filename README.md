@@ -16,6 +16,8 @@ and without an external guarantor. The liquidity stays in the shared pool and st
 that a transition which would leave an admitted commitment insufficiently backed can no longer become
 authoritative.
 
+**Demo:** [Standby — Execution Capacity When You Need It (3:55)](https://www.loom.com/share/4a40fa663c9d425da94f9ee9726d0fb9)
+
 ---
 
 ## The problem
@@ -494,3 +496,23 @@ The canonical engineering package lives in [`docs/`](docs/). It is layered by au
 
 Start with `demo-spec.md` for the demonstration, `mechanism.md` for the economics, and
 `uniswap-v4-realization.md` for the hook.
+
+## AI-Assisted Development & Attribution
+
+Standby was developed with AI-assisted engineering tools.
+
+**ChatGPT (OpenAI)** was used as a protocol-derivation, specification, planning, and independent-review
+partner. It assisted with reasoning about economic semantics, responsibility boundaries, implementation
+slices, verification gates, presentation, and review of implementation evidence.
+
+**Claude Code (Anthropic)** was used as the bounded repository implementation assistant for Solidity, tests,
+frontend, documentation, and related repository changes. Implementation work was directed through scoped
+session prompts derived from the project's canonical specifications and implementation plan.
+
+The developer remained responsible for the protocol design, economic model, architectural and engineering
+decisions, implementation boundaries, testing strategy, review of generated changes and verification
+evidence, acceptance of completed work, and final submission.
+
+For transparency, the repository preserves the project's canonical specifications, implementation plan,
+session prompts, Claude implementation logs, and contemporaneous ChatGPT reasoning and independent-review
+records.
