@@ -1,9 +1,10 @@
 # Standby — Project Status
 
-**Last Updated:** September 10, 2026
+**Last Updated:** September 12, 2026
 **Project Phase:** Solidity / Reference Implementation
 **Current Implementation Slice:** None — F10 — Demo / Submission Readiness (COMPLETE)
 **Last Closed Gate:** G10 — Demo / Submission Readiness Gate (CLOSED / PASS)
+**Project Completion:** Implementation, verification, canonical demo, presentation, and ETHOnline submission readiness COMPLETE
 **Status:** F0 COMPLETE — F1 COMPLETE — F2 COMPLETE — F3 COMPLETE — F4 COMPLETE — F5 COMPLETE — F6A COMPLETE — F7 COMPLETE — F6B COMPLETE — F8A COMPLETE — F8B COMPLETE — F8C COMPLETE — F8D COMPLETE — GI COMPLETE — F9 COMPLETE — F10 COMPLETE
 
 ---
@@ -35,9 +36,11 @@ Standby is currently in:
 
 > **Phase 12 — Solidity / Reference Implementation**
 
-The immediate objective is to implement the frozen Standby design as a deterministic Uniswap v4 reference realization while preserving the previously derived economic, architectural, state, invariant, and verification requirements.
+That objective — implementing the frozen Standby design as a deterministic Uniswap v4 reference realization while preserving the previously derived economic, architectural, state, invariant, and verification requirements — has been met.
 
-Implementation proceeds through the verification-gated F0–F10 ladder defined in `implementation-plan.md`.
+Implementation proceeded through the verification-gated F0–F10 ladder defined in `implementation-plan.md`.
+
+Standby implementation, verification, canonical demo, presentation, and ETHOnline submission readiness are COMPLETE. No required implementation or submission-readiness work remains.
 
 There is no next authorized slice on the critical path:
 
@@ -612,6 +615,7 @@ explicitly tasked.
 - GI Full Stateful Invariant Verification is complete and G-I is closed.
 - F9 Canonical Acceptance is complete and G9 is closed.
 - F10 Demo / Submission Readiness is complete and G10 is closed.
+- Standby implementation, verification, canonical demo, presentation, and ETHOnline submission readiness are complete.
 
 **Current Gate**
 
