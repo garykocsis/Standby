@@ -1,6 +1,6 @@
 # Standby — Project Status
 
-**Last Updated:** September 12, 2026
+**Last Updated:** September 15, 2026
 **Project Phase:** Solidity / Reference Implementation
 **Current Implementation Slice:** None — F10 — Demo / Submission Readiness (COMPLETE)
 **Last Closed Gate:** G10 — Demo / Submission Readiness Gate (CLOSED / PASS)
@@ -52,7 +52,7 @@ The last closed gate is:
 
 F0, F1, F2, F3, F4, F5, F6A, F7, F6B, F8A, F8B, F8C, F8D, GI, F9 and F10 have been implemented, verified, and explicitly gate-closed. The targeted G3 revalidation required by the F5 prospective-derivability correction also passed, and G3 remains closed.
 
-F10 was reviewed independently and G10 was explicitly closed. F9T — Public Testnet Deployment — remains optional and off the critical path.
+F10 was reviewed independently and G10 was explicitly closed. F9T — Base Sepolia Public Testnet Deployment — is COMPLETE and G9T is PASS; F9T remains supplementary, post-submission, and off the critical path.
 
 ---
 
@@ -78,7 +78,7 @@ Current implementation sequence:
 | GI    | Full Stateful Invariant Verification              | **COMPLETE — G-I CLOSED**    |
 | F9    | Canonical Acceptance                              | **COMPLETE — G9 CLOSED**     |
 | F10   | Demo / Submission Readiness                       | **COMPLETE — G10 CLOSED**    |
-| F9T   | Public Testnet Evidence                           | OPTIONAL / OFF CRITICAL PATH |
+| F9T   | Public Testnet Evidence                           | **COMPLETE — G9T PASS** (SUPPLEMENTARY / OFF CRITICAL PATH) |
 
 Downstream slices must not be started merely because upstream code compiles.
 
@@ -380,8 +380,8 @@ There is no current blocker:
 
 > **The critical-path implementation ladder is complete.**
 
-F9T — Public Testnet Deployment — remains optional and off the critical path, and is not a required slice,
-gate, or submission prerequisite.
+F9T — Base Sepolia Public Testnet Deployment — is COMPLETE and G9T is PASS. F9T remains supplementary,
+post-submission, and off the critical path, and is not a required slice, gate, or submission prerequisite.
 
 Known limitations carried forward from F0, none of which blocked G0:
 
@@ -588,8 +588,8 @@ G10 has been reviewed and closed, so no critical-path action remains:
 
 > **The F0–F10 implementation ladder is complete.**
 
-F9T — Public Testnet Deployment — remains optional and off the critical path, and may begin only if
-explicitly tasked.
+F9T — Base Sepolia Public Testnet Deployment — is COMPLETE and G9T is PASS. F9T remains supplementary,
+post-submission, and off the critical path.
 
 ---
 
@@ -627,4 +627,4 @@ explicitly tasked.
 
 **Immediate Next Step**
 
-- None on the critical path. F9T — Public Testnet Deployment — remains optional and off the critical path.
+- None on the critical path. F9T — Base Sepolia Public Testnet Deployment — is COMPLETE and G9T is PASS; F9T remains supplementary, post-submission, and off the critical path.

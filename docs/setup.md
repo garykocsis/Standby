@@ -995,3 +995,68 @@ environment it runs against — restart Anvil and re-run the demo runner afterwa
 
 `frontend/node_modules/`, `frontend/dist/`, `frontend/public/standby-demo.json` and `demo.env` are
 git-ignored. `frontend/package-lock.json` is committed.
+
+---
+
+# Supplementary Public Testnet (F9T) — Base Sepolia
+
+Post-submission supplementary evidence only. The canonical judged acceptance environment remains deterministic local
+Anvil; nothing here changes it. Recorded deployment evidence: `docs/reports/f9t-base-sepolia-deployment.md`.
+
+## Infrastructure
+
+`HelperConfig` resolves Base Sepolia (chain id `84532`) to the frozen official Uniswap v4 deployment — PoolManager
+`0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408`, Universal Router `0x492E6456D9528771018DeB9E87ef7750EF184104`,
+PositionManager `0x4B2C77d209D3405F41a037Ec6c77F7F5b8e2ca80`, Permit2 `0x000000000022D473030F116dDEE9F6B43aC78BA3`,
+StateView, and V4 Quoter — and only after `validateBaseSepoliaInfrastructure()` confirms code at every address, the
+Universal Router / PositionManager / PoolManager / Permit2 bindings, and a readable `msgSender()` on both trusted
+perimeters. These are public chain facts in source, not environment inputs. No dependency or remapping changed.
+
+The deployed Universal Router decodes the pre-`minHopPriceX36` v4 swap parameters, so its calldata is encoded by the
+narrow adapter in `script/helpers/PublicPeriphery.sol` rather than by pinned `IV4Router`.
+
+## Inputs
+
+Read from the git-ignored `.env`. Create it from the tracked template and fill in your own values; never commit
+`.env`:
+
+```bash
+cp .env.example .env
+```
+
+| Variable           | Purpose                                                                 |
+| ------------------ | ----------------------------------------------------------------------- |
+| `BASE_RPC_URL`     | Base Sepolia RPC endpoint (`RPC_URL` overrides it)                      |
+| `PRIVATE_KEY`      | Dedicated, funded Base Sepolia deployment/test key; the seven role keys are derived from it in-script |
+| `BASESCAN_API_KEY` | Optional; explorer source verification only                             |
+
+Do not create `base-sepolia.env` by hand: the `deploy` stage generates this git-ignored manifest of deployed
+addresses, and later stages read it.
+
+## Stage-by-stage run
+
+```bash
+./script/testnet/run-base-sepolia.sh preflight        # simulate against live state; broadcasts nothing
+./script/testnet/run-base-sepolia.sh deploy           # writes base-sepolia.env (git-ignored)
+./script/testnet/run-base-sepolia.sh bootstrap        # S = 80,000, O = 0
+COMMITMENT_ID=0 ./script/testnet/run-base-sepolia.sh verify 80000000000 0 0
+./script/testnet/run-base-sepolia.sh a1               # then: verify 80000000000 50000000000 50000000000
+./script/testnet/run-base-sepolia.sh a2               # then: verify 65000000000 50000000000 50000000000
+./script/testnet/run-base-sepolia.sh a3               # simulated; must be refused; verify unchanged
+./script/testnet/run-base-sepolia.sh a4               # then: verify 15000000000 0 0
+```
+
+Each broadcasting stage uses `--slow`, so multi-account transactions are mined in order. `verify` re-reads the mined
+chain. A dry run against a fork is `anvil --fork-url <Base Sepolia>` plus `RPC_URL=http://127.0.0.1:<port>`; set
+`STANDBY_MANIFEST` and `FOUNDRY_BROADCAST` to scratch paths so rehearsal records never mix with `broadcast/*/84532/`.
+
+Explorer source verification uses the existing Foundry workflow, for example
+`forge verify-contract <address> src/StandbyHook.sol:StandbyHook --chain 84532 --etherscan-api-key "$BASESCAN_API_KEY"
+--constructor-args <abi-encoded args> --watch`.
+
+## Secret handling
+
+The scripts read `PRIVATE_KEY` through a cheatcode, and a failing Foundry script prints its call trace even at default
+verbosity, including cheatcode return values. The runner therefore strips URLs and every trace line from forge
+output. Do not add `-vvv`/`-vvvv` to these invocations, and do not paste raw forge failure output anywhere. Pass the
+RPC endpoint through the environment rather than typing it into a command.
