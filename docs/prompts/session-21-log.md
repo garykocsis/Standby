@@ -643,3 +643,45 @@ The remaining repository actions are outside implementation:
 - commit;
 - PR / CI;
 - merge and synchronization of `main`.
+
+---
+
+# Final Follow-up — README Base Sepolia Deployment Presentation
+
+Appended after all preceding Session 21 content, which is preserved unchanged as historical evidence. No earlier
+section — the original completion report and its counts, the `.env.example` follow-up, or the administrative-closure
+record — is revised by this entry.
+
+Instruction: `docs/prompts/session-21-update-readme-with-basesepolia-address.md`. After F9T/G9T closure the user
+authorized one final README presentation follow-up, so that the completed public deployment is discoverable from the
+repository front page.
+
+Recorded facts:
+
+1. `README.md` now carries a concise `## Base Sepolia deployment` section, placed after `## Running the demo` and
+   before `## What Standby does not claim`.
+2. It exposes the five deployed Standby Base Sepolia contract addresses — MockUSTB, MockUSDC, EligibilityRegistry,
+   StandbyHook, ExerciseRouter — and the Standby `PoolId`
+   `0x8b6033124249c0b22872e95746f9526d7c722dddedbc7209424923879ca9d271`. Every value was checked character-for-character
+   against `docs/reports/f9t-base-sepolia-deployment.md` before being written; none was altered.
+3. Each contract address links to its Base Sepolia BaseScan address page
+   (`https://sepolia.basescan.org/address/<address>`); the `PoolId` is labelled as a pool identifier and is
+   deliberately not linked as an address.
+4. Detailed deployment provenance, transaction hashes, official Uniswap v4 infrastructure details, source-verification
+   evidence, A1–A4 execution evidence and reproduction details remain owned by
+   `docs/reports/f9t-base-sepolia-deployment.md`, which the README links to rather than duplicating.
+5. The section states that the deterministic local Anvil environment remains the canonical ETHGlobal judged
+   acceptance environment and that the Base Sepolia deployment is supplementary post-submission public-network
+   evidence that does not replace it. It makes no production, production-ready, mainnet-ready, or audited claim.
+6. This follow-up was documentation/presentation only.
+7. No implementation, protocol semantics, dependency, deployment state, test, script, configuration, or gate result
+   changed. The README's existing accepted test count and every other existing section were left untouched.
+8. No transaction was broadcast and nothing was redeployed.
+9. F9T remains COMPLETE, G9T remains PASS, and Session 21 remains administratively closed.
+
+Files modified by this follow-up: `README.md` and this log.
+
+Follow-up accounting: this is the fourth instruction received after the original Session 21 completion report — the
+`.env.example` reproduction template, the status-only `docs/project-status.md` update, the administrative-closure
+record, and this README presentation follow-up. The historical counts stated inside the earlier completion-report
+sections are unchanged and remain accurate as of the time they were written.
