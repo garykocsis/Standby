@@ -398,6 +398,29 @@ A3 is refused for any reason other than the Standby backing requirement.
 `docs/setup.md` documents the full environment, the individual script entrypoints, and the frontend
 verification command.
 
+## Base Sepolia deployment
+
+Standby has also been deployed to **Base Sepolia**, where the same canonical A1 → A2 → A3 → A4 lifecycle was
+reproduced against the validated official Uniswap v4 infrastructure — the official PoolManager, Universal Router,
+PositionManager and Permit2.
+
+This is **supplementary post-submission public-network evidence**. The deterministic local Anvil environment above
+remains the canonical ETHGlobal judged acceptance environment; the public deployment does not replace it.
+
+| Contract            | Base Sepolia address                                                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| MockUSTB            | [`0x6334956A63F676eFc4f44cC330AA0F0546d4F6c8`](https://sepolia.basescan.org/address/0x6334956A63F676eFc4f44cC330AA0F0546d4F6c8) |
+| MockUSDC            | [`0xeC64E378231542Fdd2Eedf2a1763a041C2Dda523`](https://sepolia.basescan.org/address/0xeC64E378231542Fdd2Eedf2a1763a041C2Dda523) |
+| EligibilityRegistry | [`0x0BffBD010510e7551581F94bF67A621F1Af2fcB6`](https://sepolia.basescan.org/address/0x0BffBD010510e7551581F94bF67A621F1Af2fcB6) |
+| StandbyHook         | [`0x92E89Da9FE8A103f4864914b268Ec364f6458AC0`](https://sepolia.basescan.org/address/0x92E89Da9FE8A103f4864914b268Ec364f6458AC0) |
+| ExerciseRouter      | [`0x17C3Ff4a5DD943359699d44BF14058cE4f31C187`](https://sepolia.basescan.org/address/0x17C3Ff4a5DD943359699d44BF14058cE4f31C187) |
+
+Standby `PoolId`: `0x8b6033124249c0b22872e95746f9526d7c722dddedbc7209424923879ca9d271`
+
+Deployment provenance, transaction hashes, the official Uniswap v4 infrastructure used, source-verification status,
+A1–A4 execution evidence and reproduction instructions are recorded in
+[`docs/reports/f9t-base-sepolia-deployment.md`](docs/reports/f9t-base-sepolia-deployment.md).
+
 ## What Standby does not claim
 
 The demonstration establishes that, for the demonstrated Standby configuration, a bounded future
